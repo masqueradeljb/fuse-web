@@ -204,30 +204,48 @@ heuristics only; none of it is copied, and the heavier parts (full token profile
 component recipes, full-page CDP screenshots, link maps, footers) are intentionally left
 out.
 
-## Phase 2 — real logos + AI fusion
+## Phase 2 — AI logo fusion (OpenAI gpt-image-2.5)
 
-### Logo
+Logos already come from `/api/logo` (Phase 1.5). Phase 2 adds the fusion itself.
 
-From `/api/site`: `logo` → `favicon` → `https://www.google.com/s2/favicons?domain=…&sz=256`.
-Normalized to a 512×512 PNG (`sharp`, transparent padding; SVGs rasterized by `sharp`),
-cached at `cache/logos/<domain>.png`.
+### Direction: subject from the left slot, style from the right slot
 
-The site library gains real logos: Phase 1's `iconSlug` stays as the instant fallback
-while the fetched logo loads. A text box ("+ site URL") adds a site to a shelf.
+- **Left slot = subject.** Its main theme / character / mark shape stays the core of the new logo.
+- **Right slot = style.** Its color palette, line weight, shape language and finish are applied.
+- Order matters: A×B ≠ B×A, and results are cached per ordered pair.
 
-### Logo fusion — `/api/fuse-logo`
+### `/api/fuse-logo` (Vite dev-server middleware, next to `/api/logo`)
 
-Input: two site ids. Sends both PNGs to Gemini `gemini-3.1-flash-image-preview`
-("Nano Banana 2") via `@google/genai` with a fixed prompt: merge the two marks into **one
-new logo** that keeps a recognizable element of each, flat vector style, centered, plain
-background, no text unless both originals are wordmarks. 1:1, 1K.
+- `POST /` body: `{ a: { id, name, png }, b: { id, name, png } }` — `png` is a PNG data URL the
+  browser renders at 512×512 (reference glyph on its brand color; your logo on white or
+  `logoBg`). Each ≤ 2 MB.
+- Calls OpenAI `POST /v1/images/edits` with both images (`image[]`), model
+  `gpt-image-2.5-sunburst`, quality `medium`, a small square size (512×512; if the API
+  rejects it, the smallest size it accepts), and the direction prompt:
+  *Image 1 is {A}'s logo, image 2 is {B}'s. Create one new logo: keep the main subject /
+  character / shape of image 1 as the core mark, redrawn in the visual style of image 2 —
+  its color palette, line weight, shape language and finish. Recognizably {A}'s mark in
+  {B}'s style. Flat vector logo, centered, plain white background, no text, no mockup.*
+- Result saved to `cache/fused/<a>__<b>.png` (git-ignored) and served at
+  `GET /img?id=<a>__<b>`; a cached pair returns instantly and costs nothing.
+- Response: `{ id, logoUrl, cached, usd? }`. Each generation's cost (from `usage`, same
+  per-token price table as our other image scripts) is logged to the dev-server console.
+- Client disconnect (card dismissed mid-fuse) aborts the upstream request.
 
-Auth: `GEMINI_API_KEY`, or Vertex via `GOOGLE_GENAI_USE_VERTEXAI=True` +
-`GOOGLE_CLOUD_PROJECT` (see Secrets). Result is cached at
-`cache/fused/<a>__<b>.png` (pair sorted, so A×B = B×A). 30 s timeout.
+### Keys and cost safety
 
-While generating (~5–15 s), the Phase 1 placeholder card shows with a "fusing…" shimmer;
-the real logo cross-fades in.
+- Key only from the server's environment: shell `OPENAI_API_KEY`, or a git-ignored `.env`
+  (read with Vite's `loadEnv`). Never sent to the browser, logged, or committed. The repo
+  ships `.env.example` with names only.
+- No key → `503`; the browser falls back to the placeholder fuse and shows a banner.
+- `FUSE_MAX_GENERATIONS` (default 50) per server run → `429` after that.
+- Overrides: `FUSE_IMAGE_MODEL`, `FUSE_IMAGE_QUALITY`, `FUSE_IMAGE_SIZE`.
+
+### In the app
+
+- The card spins "fusing…" until the result arrives (timeout 120 s → error state, grip to
+  retry), then cross-fades into the fused logo.
+- Pulling the card up opens the fused page with the fused logo shown large.
 
 ## Phase 3 — fused landing page
 
