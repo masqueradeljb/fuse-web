@@ -37,7 +37,7 @@ describe('parseTags', () => {
 })
 
 describe('iconCandidates', () => {
-  it('ranks apple-touch-icon, then SVG, then larger icons, then Google favicons; skips mask-icon', () => {
+  it('ranks apple-touch-icon, then SVG, then larger icons, then /favicon.ico and gstatic; skips mask-icon', () => {
     const html = `<head>
       <link rel="icon" href="/16.png" sizes="16x16">
       <link rel="icon" href="/64.png" sizes="64x64">
@@ -50,11 +50,15 @@ describe('iconCandidates', () => {
       'https://www.example.com/logo.svg',
       'https://www.example.com/64.png',
       'https://www.example.com/16.png',
-      'https://www.google.com/s2/favicons?domain=www.example.com&sz=256',
+      'https://www.example.com/favicon.ico',
+      'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https%3A%2F%2Fwww.example.com&size=256',
     ])
   })
   it('falls back to Google favicons for empty HTML', () => {
-    expect(iconCandidates('', page)).toEqual(['https://www.google.com/s2/favicons?domain=www.example.com&sz=256'])
+    expect(iconCandidates('', page)).toEqual([
+      'https://www.example.com/favicon.ico',
+      'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https%3A%2F%2Fwww.example.com&size=256',
+    ])
   })
 })
 

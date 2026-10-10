@@ -53,7 +53,7 @@ export function parseTags(html: string, name: 'link' | 'meta'): Attrs[] {
 const largestSize = (sizes: string | undefined) =>
   Math.max(0, ...(sizes ?? '').split(/\s+/).map((s) => parseInt(s, 10) || 0))
 
-/** Absolute logo URLs, best first. Always ends with Google's favicon service. */
+/** Absolute logo URLs, best first. Ends with /favicon.ico, then gstatic's favicon service (404s for unknown sites). */
 export function iconCandidates(html: string, page: URL): string[] {
   const ranked: { href: string; score: number }[] = []
   for (const link of parseTags(headOf(html), 'link')) {
@@ -75,7 +75,8 @@ export function iconCandidates(html: string, page: URL): string[] {
       // unparsable href: skip
     }
   }
-  urls.push(`https://www.google.com/s2/favicons?domain=${page.hostname}&sz=256`)
+  urls.push(`${page.origin}/favicon.ico`)
+  urls.push(`https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${encodeURIComponent(page.origin)}&size=256`)
   return [...new Set(urls)]
 }
 

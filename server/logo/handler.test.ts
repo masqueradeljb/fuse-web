@@ -57,4 +57,65 @@ describe('handleLogo', () => {
     const res = await call('/img?id=never-fetched.com')
     expect(res.statusCode).toBe(404)
   })
+
+  it('does not follow a redirect to a private host', async () => {
+    const fetchMock = vi.fn(async (input: URL | string) => {
+      if (String(input) === 'https://example.net/') return new Response(null, { status: 302, headers: { location: 'http://127.0.0.1/x' } })
+      return new Response('nope', { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await call('/?url=example.net')
+    expect(res.statusCode).toBe(404)
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('127.0.0.1'))).toBe(false)
+  })
+
+  it('follows an image redirect to a public URL', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: URL | string) => {
+      const u = String(input)
+      if (u === 'https://redir.example/') return new Response('<head><link rel="icon" href="/i.png"></head>', { headers: { 'content-type': 'text/html' } })
+      if (u === 'https://redir.example/i.png') return new Response(null, { status: 301, headers: { location: 'https://cdn.example.org/real.png' } })
+      if (u === 'https://cdn.example.org/real.png') return new Response(PNG, { headers: { 'content-type': 'image/png' } })
+      return new Response('nope', { status: 404 })
+    }))
+    const res = await call('/?url=redir.example')
+    expect(res.statusCode).toBe(200)
+    const img = await call('/img?id=redir.example')
+    expect(new Uint8Array(img.body as Buffer)).toEqual(PNG)
+  })
+
+  it('skips an image over the size cap and uses the next candidate', async () => {
+    const big = new Uint8Array(2_000_001)
+    vi.stubGlobal('fetch', vi.fn(async (input: URL | string) => {
+      const u = String(input)
+      if (u === 'https://big.example/') return new Response('<head><link rel="apple-touch-icon" href="/big.png"></head>', { headers: { 'content-type': 'text/html' } })
+      if (u === 'https://big.example/big.png') return new Response(big, { headers: { 'content-type': 'image/png' } })
+      if (u === 'https://big.example/favicon.ico') return new Response(PNG, { headers: { 'content-type': 'image/png' } })
+      return new Response('nope', { status: 404 })
+    }))
+    const res = await call('/?url=big.example')
+    expect(res.statusCode).toBe(200)
+    const img = await call('/img?id=big.example')
+    expect(new Uint8Array(img.body as Buffer)).toEqual(PNG)
+  })
+
+  it('skips an image whose content-length exceeds the cap without reading it', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: URL | string) => {
+      const u = String(input)
+      if (u === 'https://cl.example/') return new Response('<head><link rel="icon" href="/x.png"></head>', { headers: { 'content-type': 'text/html' } })
+      if (u === 'https://cl.example/x.png') return new Response(PNG, { headers: { 'content-type': 'image/png', 'content-length': '5000000' } })
+      if (u === 'https://cl.example/favicon.ico') return new Response(new Uint8Array([9, 9]), { headers: { 'content-type': 'image/x-icon' } })
+      return new Response('nope', { status: 404 })
+    }))
+    expect((await call('/?url=cl.example')).statusCode).toBe(200)
+    const img = await call('/img?id=cl.example')
+    expect(img.headers['content-type']).toBe('image/x-icon')
+  })
+
+  it('sets a sandboxing CSP on images', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: URL | string) =>
+      String(input) === 'https://csp.example/' ? new Response('', { headers: { 'content-type': 'text/html' } }) : new Response(PNG, { headers: { 'content-type': 'image/png' } })))
+    await call('/?url=csp.example')
+    const img = await call('/img?id=csp.example')
+    expect(img.headers['content-security-policy']).toContain('sandbox')
+  })
 })

@@ -3,6 +3,8 @@ import { iconCandidates, isBlockedHost, normalizeUrl, siteName } from './parse'
 
 const TIMEOUT_MS = 6000
 const MAX_IMAGE_BYTES = 2_000_000
+const MAX_HTML_BYTES = 1_000_000
+const MAX_REDIRECTS = 3
 const MAX_CACHED = 50
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
 
@@ -47,10 +49,56 @@ export async function handleLogo(req: IncomingMessage, res: ServerResponse): Pro
   }
 }
 
+/** fetch that follows up to MAX_REDIRECTS itself, refusing non-http(s) and private targets. Null on failure. */
+async function guardedFetch(start: URL, init: RequestInit): Promise<Response | null> {
+  let current = start
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (!/^https?:$/.test(current.protocol) || isBlockedHost(current.hostname)) return null
+    const r = await fetch(current, { ...init, redirect: 'manual', signal: AbortSignal.timeout(TIMEOUT_MS) })
+    if (r.status < 300 || r.status >= 400) return r
+    const location = r.headers.get('location')
+    void r.body?.cancel().catch(() => {})
+    if (!location) return null
+    try {
+      current = new URL(location, current)
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+/** Reads at most maxBytes; null if the body is larger. */
+async function readCapped(r: Response, maxBytes: number, truncate = false): Promise<Buffer | null> {
+  const declared = Number(r.headers.get('content-length') ?? 0)
+  if (!truncate && declared > maxBytes) {
+    void r.body?.cancel().catch(() => {})
+    return null
+  }
+  if (!r.body) return Buffer.alloc(0)
+  const reader = r.body.getReader()
+  const chunks: Buffer[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.length
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {})
+      if (!truncate) return null
+      chunks.push(Buffer.from(value.subarray(0, value.length - (total - maxBytes))))
+      break
+    }
+    chunks.push(Buffer.from(value))
+  }
+  return Buffer.concat(chunks)
+}
+
 async function fetchText(page: URL): Promise<string> {
   try {
-    const r = await fetch(page, { headers: { 'user-agent': UA, accept: 'text/html' }, signal: AbortSignal.timeout(TIMEOUT_MS) })
-    return r.ok ? await r.text() : ''
+    const r = await guardedFetch(page, { headers: { 'user-agent': UA, accept: 'text/html' } })
+    if (!r || !r.ok) return ''
+    return (await readCapped(r, MAX_HTML_BYTES, true))?.toString('utf8') ?? ''
   } catch {
     return ''
   }
@@ -58,13 +106,15 @@ async function fetchText(page: URL): Promise<string> {
 
 async function fetchImage(src: string): Promise<CachedImage | null> {
   try {
-    const target = new URL(src)
-    if (!/^https?:$/.test(target.protocol) || isBlockedHost(target.hostname)) return null
-    const r = await fetch(target, { headers: { 'user-agent': UA, accept: 'image/*' }, signal: AbortSignal.timeout(TIMEOUT_MS) })
+    const r = await guardedFetch(new URL(src), { headers: { 'user-agent': UA, accept: 'image/*' } })
+    if (!r) return null
     const type = (r.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
-    if (!r.ok || !type.startsWith('image/')) return null
-    const body = Buffer.from(await r.arrayBuffer())
-    return body.length > 0 && body.length <= MAX_IMAGE_BYTES ? { type, body } : null
+    if (!r.ok || !type.startsWith('image/')) {
+      void r.body?.cancel().catch(() => {})
+      return null
+    }
+    const body = await readCapped(r, MAX_IMAGE_BYTES)
+    return body && body.length > 0 ? { type, body } : null
   } catch {
     return null
   }
@@ -84,7 +134,7 @@ function sendImage(res: ServerResponse, id: string): void {
   res.setHeader('cache-control', 'no-store')
   res.setHeader('x-content-type-options', 'nosniff')
   // SVGs from other sites: never let them run anything if opened directly
-  res.setHeader('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'")
+  res.setHeader('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox")
   res.end(image.body)
 }
 
