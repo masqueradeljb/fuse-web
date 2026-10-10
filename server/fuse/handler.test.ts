@@ -29,7 +29,8 @@ function call(handler: ReturnType<typeof createFuseHandler>, method: string, url
 }
 
 const options = (over: Partial<FuseOptions> = {}): FuseOptions => ({
-  apiKey: 'test-key', model: 'gpt-image-2.5-sunburst', quality: 'medium', size: '512x512', maxGenerations: 5, ...over,
+  apiKey: 'test-key', model: 'gpt-image-2.5-sunburst', quality: 'medium', size: '512x512', maxGenerations: 5,
+  geminiApiKey: undefined, pageModel: 'gemini-3.8-flash', pageThinking: 'low', maxPages: 30, ...over,
 })
 
 let dir: string

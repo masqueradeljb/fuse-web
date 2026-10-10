@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { costOf, type Usage } from './cost'
 import type { FuseOptions } from './options'
+import { pairId } from '../pair'
 import { buildFusePrompt } from './prompt'
 
 const OPENAI_EDITS = 'https://api.openai.com/v1/images/edits'
@@ -18,8 +18,6 @@ interface Side {
   png: string
 }
 
-/** Cache id: opaque hash of the ordered pair of site ids (also the file name). */
-const pairId = (a: string, b: string) => createHash('sha256').update(`${a}\n${b}`).digest('hex').slice(0, 16)
 const ID_RE = /^[a-f0-9]{16}$/
 const FALLBACK_SIZE = '1024x1024'
 
