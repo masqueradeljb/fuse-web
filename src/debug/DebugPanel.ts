@@ -13,7 +13,10 @@ export class DebugPanel {
     private el: HTMLElement,
     private config: GripConfig,
   ) {
-    window.addEventListener('keydown', (e) => this.onKey(e.key))
+    window.addEventListener('keydown', (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return
+      this.onKey(e.key)
+    })
   }
 
   record(hands: TrackedHand[]): void {

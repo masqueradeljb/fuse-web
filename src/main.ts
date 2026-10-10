@@ -53,31 +53,60 @@ async function startCamera() {
       audio: false,
     })
     await video.play()
+  } catch (err) {
+    console.error('camera unavailable', err)
+    showBanner('Camera unavailable — using mouse mode (drag logos with the mouse).')
+    return
+  }
+  try {
     tracker = await HandTracker.create()
   } catch (err) {
-    console.error('camera/tracker unavailable', err)
-    banner.textContent = 'Camera unavailable — using mouse mode (drag logos with the mouse).'
-    banner.hidden = false
+    console.error('hand tracking failed to load', err)
+    ;(video.srcObject as MediaStream).getTracks().forEach((t) => t.stop())
+    video.srcObject = null
+    showBanner('Hand tracking failed to load — using mouse mode. Try `npm install` again.')
   }
 }
 
-function frame(now: number) {
-  const hands: TrackedHand[] = tracker ? tracker.detect(video, now, innerWidth, innerHeight) : []
-  const fromHands = engine.update(hands)
-  const fromMouse = mouse.poll()
-  const input: InputFrame = {
-    cursors: [...fromHands.cursors, ...fromMouse.cursors],
-    events: [...fromHands.events, ...fromMouse.events],
-  }
-  scene.update(now, input)
-  debug.record(hands)
-  debug.update(input.cursors)
-  renderer.showDebug = debug.visible
-  renderer.draw(scene, tracker ? video : null, hands)
+function showBanner(text: string) {
+  banner.textContent = text
+  banner.hidden = false
+}
 
-  if (hands.length) lastHandSeen = now
-  hint.hidden = !tracker || now - lastHandSeen < 3000
+let hands: TrackedHand[] = []
+let handFrame: InputFrame = { cursors: [], events: [] }
+let lastErrorLog = 0
+
+function frame(now: number) {
   requestAnimationFrame(frame)
+  try {
+    const fresh = tracker?.detect(video, now, innerWidth, innerHeight)
+    let handEvents: InputFrame['events'] = []
+    if (fresh) {
+      // New camera frame: advance the gesture engine once; its events are delivered exactly once.
+      hands = fresh
+      handFrame = engine.update(hands)
+      handEvents = handFrame.events
+      debug.record(hands)
+    }
+    const fromMouse = mouse.poll()
+    const input: InputFrame = {
+      cursors: [...handFrame.cursors, ...fromMouse.cursors],
+      events: [...handEvents, ...fromMouse.events],
+    }
+    scene.update(now, input)
+    debug.update(input.cursors)
+    renderer.showDebug = debug.visible
+    renderer.draw(scene, tracker ? video : null, hands)
+
+    if (hands.length) lastHandSeen = now
+    hint.hidden = !tracker || now - lastHandSeen < 3000
+  } catch (err) {
+    if (now - lastErrorLog > 1000) {
+      lastErrorLog = now
+      console.error('frame error', err)
+    }
+  }
 }
 
 void startCamera()

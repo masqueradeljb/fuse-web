@@ -6,12 +6,12 @@ export const gripConfig = {
   fistThreshold: 0.9,
   /** release only above threshold × this */
   releaseFactor: 1.3,
-  /** consecutive frames below threshold to start a grip */
+  /** consecutive camera frames below threshold to start a grip */
   startFrames: 2,
-  /** consecutive frames above release threshold to end a grip */
+  /** consecutive camera frames above release threshold to end a grip */
   endFrames: 3,
-  /** frames a hand may vanish before its grip is dropped */
-  lostGraceFrames: 10,
+  /** camera frames (~30 fps) a hand may vanish before its grip is dropped (≈200 ms) */
+  lostGraceFrames: 6,
 }
 export type GripConfig = typeof gripConfig
 

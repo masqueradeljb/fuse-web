@@ -41,7 +41,6 @@ export class HandTracker {
   private nextId = 1
   private frame = 0
   private lastVideoTime = -1
-  private lastHands: TrackedHand[] = []
 
   private constructor(private landmarker: HandLandmarker) {}
 
@@ -56,9 +55,9 @@ export class HandTracker {
     }
   }
 
-  /** Hands in mirrored screen px. Returns the previous result if the video has no new frame. */
-  detect(video: HTMLVideoElement, nowMs: number, viewW: number, viewH: number): TrackedHand[] {
-    if (video.readyState < 2 || video.currentTime === this.lastVideoTime) return this.lastHands
+  /** Hands in mirrored screen px, or null when the camera has no new frame since the last call. */
+  detect(video: HTMLVideoElement, nowMs: number, viewW: number, viewH: number): TrackedHand[] | null {
+    if (video.readyState < 2 || video.currentTime === this.lastVideoTime) return null
     this.lastVideoTime = video.currentTime
     this.frame++
 
@@ -83,7 +82,6 @@ export class HandTracker {
       if (!this.known.some((k) => k.id === id)) this.filters.delete(id)
     }
 
-    this.lastHands = hands
     return hands
   }
 

@@ -33,7 +33,7 @@ Privacy & Security → Camera, then reload.
 | Drop a shelf logo on a center slot | Swap it in |
 | One logo per hand, bring hands together | Fuse |
 | Drag one center logo onto the other | Fuse (one hand / mouse) |
-| Pull the result card to a screen edge | Dismiss |
+| Pull the result card to the left or right edge | Dismiss |
 
 Mouse works as a single hand. Press `D` for the debug panel (`[` `]` pinch threshold,
 `-` `=` fist threshold, `R` record landmarks to JSON).

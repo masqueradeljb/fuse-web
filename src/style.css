@@ -21,6 +21,7 @@ html, body {
 #stage { display: block; touch-action: none; }
 
 #banner {
+  pointer-events: none;
   position: fixed;
   top: 16px;
   left: 50%;
@@ -32,6 +33,7 @@ html, body {
 }
 
 #hint {
+  pointer-events: none;
   position: fixed;
   bottom: 32px;
   left: 50%;
