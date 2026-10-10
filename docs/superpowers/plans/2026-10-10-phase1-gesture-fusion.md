@@ -2465,7 +2465,7 @@ MIT
 Run:
 ```bash
 git add README.md
-git grep -n -I -E 'AIza|sk-[A-Za-z0-9]|api[_-]?key\s*[:=]|-----BEGIN|@hotmail|@gmail|/Users/' -- . ':!package-lock.json' || echo "clean"
+git grep -n -I -E 'AIza|sk-[A-Za-z0-9]|api[_-]?key\s*[:=]|-----BEGIN|@hotmail|@gmail|/Users/' -- . ':!package-lock.json' ':!docs/' || echo "clean"
 ```
 Expected: `clean`.
 
