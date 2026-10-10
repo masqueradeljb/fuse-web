@@ -38,10 +38,27 @@ async function downloadRef(src: string): Promise<RefImage | null> {
   }
 }
 
+/** Width/height from PNG or JPEG header bytes; null if unreadable. */
+export function imageSize(b: Buffer): { w: number; h: number } | null {
+  if (b.length > 24 && b.readUInt32BE(0) === 0x89504e47) return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) }
+  if (b[0] === 0xff && b[1] === 0xd8) {
+    for (let i = 2; i + 9 < b.length; ) {
+      if (b[i] !== 0xff) { i++; continue }
+      const m = b[i + 1]
+      if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return { h: b.readUInt16BE(i + 5), w: b.readUInt16BE(i + 7) }
+      i += 2 + b.readUInt16BE(i + 2)
+    }
+  }
+  return null
+}
+
+/** Reference hero visual from the STYLE site only; real images at least 400x300. */
 async function pickReference(c: SiteCapture | null, screenshot: Buffer | null): Promise<RefImage | null> {
   for (const src of heroCandidates(c)) {
+    if (/\.(ico|svg)(\?|#|$)/i.test(src)) continue
     const img = await downloadRef(src)
-    if (img) return img
+    const size = img ? imageSize(img.buffer) : null
+    if (img && size && size.w >= 400 && size.h >= 300) return img
   }
   return screenshot ? { buffer: screenshot, type: 'image/jpeg' } : null
 }

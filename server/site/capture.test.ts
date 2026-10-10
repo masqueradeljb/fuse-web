@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { createCapturer } from './capture'
+import { createCapturer, looksBlocked } from './capture'
 
 const FIXTURE = `<!doctype html><html><head><title>Acme | Rockets</title><base href="https://acme.test/"><meta name="description" content="Rockets for the people.">
 <style>body{background:#101820;color:#f2f2f2;font-family:Georgia,serif}h1{font-family:Impact,sans-serif;font-size:64px}
@@ -52,4 +52,10 @@ describe('capturer', () => {
       { heading: 'Tall', text: 'Plain paragraph.' },
     ])
   }, 30_000)
+
+  it('detects bot-check pages', () => {
+    expect(looksBlocked('Just a moment...', '')).toBe(true)
+    expect(looksBlocked('Lovable', 'This website uses a security service to protect itself. Verifying you are not a bot')).toBe(true)
+    expect(looksBlocked('Acme | Rockets', 'Rockets for everyone. Launch in minutes. '.repeat(20))).toBe(false)
+  })
 })

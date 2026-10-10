@@ -37,6 +37,6 @@ export const REFERENCE_SITES: Site[] = [
   site(siNetflix, 'https://www.netflix.com'),
   site(siNotion, 'https://www.notion.com'),
   site(siFigma, 'https://www.figma.com'),
-  site(siUber, 'https://www.uber.com'),
+  site(siUber, 'https://www.uber.com/us/en/drive/'),
   site(siReddit, 'https://www.reddit.com'),
 ]

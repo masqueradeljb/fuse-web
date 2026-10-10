@@ -127,7 +127,8 @@ export const INSPECT_PAGE_JS = String.raw`(() => {
     }
     if (hero.media === 'none') {
       const imgs = Array.from(box.querySelectorAll('img')).filter(visible).sort((x, y) => y.getBoundingClientRect().width * y.getBoundingClientRect().height - x.getBoundingClientRect().width * x.getBoundingClientRect().height)
-      const src = imgs.length ? httpUrl(imgs[0].currentSrc || imgs[0].src) : ''
+      const big = imgs.filter((i) => { const r = i.getBoundingClientRect(); return r.width >= 200 && r.height >= 150 })
+      const src = big.length ? httpUrl(big[0].currentSrc || big[0].src) : ''
       if (src) { hero.media = 'image'; hero.src = src }
     }
     if (hero.media === 'none') {

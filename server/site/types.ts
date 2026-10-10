@@ -42,4 +42,6 @@ export interface SiteCapture {
   /** meta description */
   description: string
   ogImage?: string
+  /** the site served a bot-check page; only title/description/ogImage are from a plain fetch */
+  blocked?: boolean
 }
