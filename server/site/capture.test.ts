@@ -11,6 +11,13 @@ const FIXTURE = `<!doctype html><html><head><title>Acme | Rockets</title>
 <main><h1>Rockets for everyone</h1><p>Launch in minutes.</p><a class="btn" href="/start">Get started</a>
 <h2>Fast</h2><p>Really fast.</p><h2>Safe</h2><p>Very safe.</p></main></body></html>`
 
+const FIXTURE2 = `<!doctype html><html><head><title>Beta</title>
+<style>button{background:transparent;border:0}.go{background:#0a7;color:#fff;padding:10px 18px;border:0}</style></head>
+<body><header><nav><button>Menu</button><a href="/a">Sign in</a><a href="/b">Docs</a></nav></header>
+<main><h1>Big idea,1 for all</h1><p>Sub.</p><button class="go">Try it</button>
+<section><div><h2>Wide</h2></div><div><span>Nested text that is definitely longer than forty characters.</span></div></section>
+<section><h2>Tall</h2><p>Plain paragraph.</p></section></main></body></html>`
+
 const dir = mkdtempSync(join(tmpdir(), 'cap-'))
 const capturer = createCapturer(dir)
 afterAll(async () => {
@@ -28,5 +35,16 @@ describe('capturer', () => {
     expect(cap.content.subhead).toBe('Launch in minutes.')
     expect(cap.content.ctas).toContain('Get started')
     expect(cap.content.sections.map((s) => s.heading)).toEqual(['Fast', 'Safe'])
+
+    const cap2 = await capturer.captureHtml('https://beta.test/', FIXTURE2)
+    expect(cap2.tokens.button.background).toBe('rgb(0, 170, 119)')
+    expect(cap2.tokens.accent).toBe('rgb(0, 170, 119)')
+    expect(cap2.content.ctas).toEqual(['Try it'])
+    expect(cap2.content.nav).toEqual(['Sign in', 'Docs'])
+    expect(cap2.content.headline).toBe('Big idea, for all')
+    expect(cap2.content.sections).toEqual([
+      { heading: 'Wide', text: 'Nested text that is definitely longer than forty characters.' },
+      { heading: 'Tall', text: 'Plain paragraph.' },
+    ])
   }, 30_000)
 })
