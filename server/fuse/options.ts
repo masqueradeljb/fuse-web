@@ -18,7 +18,7 @@ export function fuseOptionsFrom(env: Env): FuseOptions {
     apiKey: nonBlank(env.OPENAI_API_KEY),
     model: nonBlank(env.FUSE_IMAGE_MODEL) ?? 'gpt-image-2.5-sunburst',
     quality: nonBlank(env.FUSE_IMAGE_QUALITY) ?? 'medium',
-    size: size && /^\d+x\d+$/.test(size) ? size : '512x512',
+    size: size && /^\d+x\d+$/.test(size) ? size : '1024x1024',
     maxGenerations: Number.isFinite(max) && max >= 0 ? max : 50,
   }
 }

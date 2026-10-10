@@ -220,8 +220,8 @@ Logos already come from `/api/logo` (Phase 1.5). Phase 2 adds the fusion itself.
   browser renders at 512×512 (reference glyph on its brand color; your logo on white or
   `logoBg`). Each ≤ 2 MB.
 - Calls OpenAI `POST /v1/images/edits` with both images (`image[]`), model
-  `gpt-image-2.5-sunburst`, quality `medium`, a small square size (512×512; if the API
-  rejects it, the smallest size it accepts), and the direction prompt:
+  `gpt-image-2.5-sunburst`, quality `medium`, 1024×1024 (the smallest square 2.5 accepts —
+  512×512 is rejected; verified live 2026-10-10: ~13 s, ~$0.016 per fusion), and the direction prompt:
   *Image 1 is {A}'s logo, image 2 is {B}'s. Create one new logo: keep the main subject /
   character / shape of image 1 as the core mark, redrawn in the visual style of image 2 —
   its color palette, line weight, shape language and finish. Recognizably {A}'s mark in

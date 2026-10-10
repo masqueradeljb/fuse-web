@@ -7,7 +7,7 @@ describe('fuseOptionsFrom', () => {
       apiKey: undefined,
       model: 'gpt-image-2.5-sunburst',
       quality: 'medium',
-      size: '512x512',
+      size: '1024x1024',
       maxGenerations: 50,
     })
   })
@@ -25,6 +25,6 @@ describe('fuseOptionsFrom', () => {
     const o = fuseOptionsFrom({ OPENAI_API_KEY: '  ', FUSE_MAX_GENERATIONS: 'lots', FUSE_IMAGE_SIZE: 'big' })
     expect(o.apiKey).toBeUndefined()
     expect(o.maxGenerations).toBe(50)
-    expect(o.size).toBe('512x512')
+    expect(o.size).toBe('1024x1024')
   })
 })
