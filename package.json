@@ -9,7 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
-    "postinstall": "node scripts/copy-mediapipe-wasm.mjs"
+    "postinstall": "node scripts/prepare-assets.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

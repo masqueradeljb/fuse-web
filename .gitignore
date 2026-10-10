@@ -20,5 +20,6 @@ dist/
 .claude/settings.local.json
 *.log
 
-# copied from node_modules on install
+# fetched/copied on install
 public/mediapipe-wasm/
+public/models/

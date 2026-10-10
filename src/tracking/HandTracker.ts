@@ -6,6 +6,32 @@ import { OneEuroFilter } from './oneEuro'
 
 const MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
+const LOCAL_MODEL_PATH = '/models/hand_landmarker.task'
+
+/** Prefer the model fetched at install time (works offline); fall back to the remote copy. */
+async function resolveModelPath(): Promise<string> {
+  try {
+    const res = await fetch(LOCAL_MODEL_PATH, { method: 'HEAD' })
+    // Vite's dev server answers unknown paths with index.html (200), so check the content type too.
+    if (res.ok && !(res.headers.get('content-type') ?? '').includes('text/html')) return LOCAL_MODEL_PATH
+  } catch {
+    // network or fetch failure: use the remote URL
+  }
+  return MODEL_URL
+}
+
+function createLandmarker(
+  fileset: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>,
+  modelAssetPath: string,
+  delegate: 'GPU' | 'CPU',
+): Promise<HandLandmarker> {
+  return HandLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath, delegate },
+    runningMode: 'VIDEO',
+    numHands: 2,
+  })
+}
+
 /** keep a vanished hand's id this many video frames so a brief dropout doesn't reset it */
 const KEEP_LOST_FRAMES = 6
 
@@ -21,12 +47,13 @@ export class HandTracker {
 
   static async create(): Promise<HandTracker> {
     const fileset = await FilesetResolver.forVisionTasks('/mediapipe-wasm')
-    const landmarker = await HandLandmarker.createFromOptions(fileset, {
-      baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
-      runningMode: 'VIDEO',
-      numHands: 2,
-    })
-    return new HandTracker(landmarker)
+    const modelPath = await resolveModelPath()
+    try {
+      return new HandTracker(await createLandmarker(fileset, modelPath, 'GPU'))
+    } catch (err) {
+      console.warn('HandLandmarker GPU delegate failed, retrying on CPU', err)
+      return new HandTracker(await createLandmarker(fileset, modelPath, 'CPU'))
+    }
   }
 
   /** Hands in mirrored screen px. Returns the previous result if the video has no new frame. */
