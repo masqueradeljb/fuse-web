@@ -78,6 +78,9 @@ const HIDE_CONSENT_JS = String.raw`(() => {
   }
 })()`
 
+/** Bump when capture logic changes so cached captures are redone (2: layered-image filter). */
+const CAPTURE_VERSION = 2
+
 export function createCapturer(cacheDir: string) {
   let browser: Promise<Browser> | null = null
   const inFlight = new Map<string, Promise<CaptureResult>>()
@@ -155,16 +158,14 @@ export function createCapturer(cacheDir: string) {
   }
 
   return {
-    /** Live capture, cached per host. */
+    /** Live capture, cached per page; captures from an older CAPTURE_VERSION are redone. */
     capture(url: string): Promise<CaptureResult> {
       const key = hostKey(url)
       const json = join(cacheDir, `${key}.json`)
       const jpg = join(cacheDir, `${key}.jpg`)
-      if (existsSync(json)) {
-        return Promise.resolve({
-          capture: JSON.parse(readFileSync(json, 'utf8')) as SiteCapture,
-          screenshot: existsSync(jpg) ? readFileSync(jpg) : null,
-        })
+      const cached = existsSync(json) ? (JSON.parse(readFileSync(json, 'utf8')) as SiteCapture & { version?: number }) : null
+      if (cached && cached.version === CAPTURE_VERSION) {
+        return Promise.resolve({ capture: cached, screenshot: existsSync(jpg) ? readFileSync(jpg) : null })
       }
       const running = inFlight.get(key)
       if (running) return running
@@ -172,7 +173,7 @@ export function createCapturer(cacheDir: string) {
         .then((result) => {
           if (result.capture.blocked) return result
           mkdirSync(cacheDir, { recursive: true })
-          writeFileSync(json, JSON.stringify(result.capture, null, 2))
+          writeFileSync(json, JSON.stringify({ ...result.capture, version: CAPTURE_VERSION }, null, 2))
           if (result.screenshot) writeFileSync(jpg, result.screenshot)
           return result
         })
