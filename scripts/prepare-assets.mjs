@@ -1,5 +1,5 @@
 // Prepares runtime assets in public/ on install: MediaPipe wasm (copied) and the hand model (fetched).
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
 
 const MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
@@ -18,7 +18,9 @@ if (!existsSync(modelPath)) {
     const res = await fetch(MODEL_URL)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     mkdirSync('public/models', { recursive: true })
-    writeFileSync(modelPath, Buffer.from(await res.arrayBuffer()))
+    // write then rename, so an interrupted install never leaves a truncated model behind
+    writeFileSync(`${modelPath}.tmp`, Buffer.from(await res.arrayBuffer()))
+    renameSync(`${modelPath}.tmp`, modelPath)
   } catch (err) {
     console.warn(`prepare-assets: could not download hand model (${err}); the app will fall back to the remote URL`)
   }
