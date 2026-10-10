@@ -1,10 +1,50 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { FuseOptions } from '../fuse/options'
+import { guardedFetch, readCapped } from '../logo/handler'
 import { pairId } from '../pair'
 import type { Capturer, CaptureResult } from './capture'
 import { generatePage } from './generate'
+import { generateHero } from './hero'
 import { buildPagePrompt } from './prompt'
+import type { SiteCapture } from './types'
+
+const MAX_REF_BYTES = 4_000_000
+const UA = 'Mozilla/5.0 (compatible; fuse-web)'
+
+type RefImage = { buffer: Buffer; type: 'image/png' | 'image/jpeg' }
+
+/** Candidate URLs for the reference hero visual, best first. */
+const heroCandidates = (c: SiteCapture | null): string[] => {
+  if (!c) return []
+  const h = c.hero
+  const list = [h.poster, h.media === 'image' || h.media === 'background' ? h.src : undefined, c.ogImage]
+  return Array.from(new Set(list.filter((u): u is string => !!u)))
+}
+
+async function downloadRef(src: string): Promise<RefImage | null> {
+  try {
+    const r = await guardedFetch(new URL(src), { headers: { 'user-agent': UA, accept: 'image/png,image/jpeg' } })
+    if (!r) return null
+    const type = (r.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
+    if (!r.ok || (type !== 'image/png' && type !== 'image/jpeg')) {
+      void r.body?.cancel().catch(() => {})
+      return null
+    }
+    const buffer = await readCapped(r, MAX_REF_BYTES)
+    return buffer && buffer.length > 0 ? { buffer, type } : null
+  } catch {
+    return null
+  }
+}
+
+async function pickReference(c: SiteCapture | null, screenshot: Buffer | null): Promise<RefImage | null> {
+  for (const src of heroCandidates(c)) {
+    const img = await downloadRef(src)
+    if (img) return img
+  }
+  return screenshot ? { buffer: screenshot, type: 'image/jpeg' } : null
+}
 
 export type SiteStatus = 'capturing' | 'generating' | 'ready' | 'error' | 'unknown'
 
@@ -25,6 +65,9 @@ export function createSiteJobs(options: FuseOptions, capturer: Capturer, pagesDi
   let pages = 0
 
   const pageFile = (id: string) => join(pagesDir, `${id}.html`)
+  const heroFile = (id: string) => join(pagesDir, `${id}-hero.png`)
+  /** reference hero URL to redirect to when no image was generated */
+  const heroFallbacks = new Map<string, string>()
 
   async function run(id: string, a: SiteRef, b: SiteRef, job: Job): Promise<void> {
     const signal = job.controller.signal
@@ -35,18 +78,37 @@ export function createSiteJobs(options: FuseOptions, capturer: Capturer, pagesDi
     const [ca, cb] = await Promise.all([safe(capturer.capture(a.url)), safe(capturer.capture(b.url))])
     if (signal.aborted) throw new Error('cancelled')
     job.status = 'generating'
-    const html = await generatePage(
-      { apiKey: options.geminiApiKey as string, model: options.pageModel, thinking: options.pageThinking },
-      {
-        prompt: buildPagePrompt({
-          contentName: a.name, styleName: b.name, contentUrl: a.url, styleUrl: b.url,
-          content: ca?.capture ?? null, style: cb?.capture ?? null,
-          logoUrl: `/api/fuse-logo/img?id=${id}`,
-        }),
-        screenshots: [ca?.screenshot, cb?.screenshot].filter((s): s is Buffer => !!s),
-      },
-      signal,
-    )
+    const heroUrl = `/api/fuse-site/hero?id=${id}`
+    const fallback = heroCandidates(cb?.capture ?? null)[0]
+    if (fallback) heroFallbacks.set(id, fallback)
+
+    const makeHero = async (): Promise<void> => {
+      if (!options.apiKey) return
+      const ref = await pickReference(cb?.capture ?? null, cb?.screenshot ?? null)
+      if (!ref) throw new Error('no reference image')
+      const summary = (ca?.capture.description || ca?.capture.hero.subhead || ca?.capture.content.headline || a.name).slice(0, 200)
+      const png = await generateHero(options, { productName: a.name, productSummary: summary, styleName: b.name, reference: ref.buffer, referenceType: ref.type }, signal)
+      mkdirSync(pagesDir, { recursive: true })
+      writeFileSync(heroFile(id), png)
+    }
+    const makePage = () =>
+      generatePage(
+        { apiKey: options.geminiApiKey as string, model: options.pageModel, thinking: options.pageThinking },
+        {
+          prompt: buildPagePrompt({
+            contentName: a.name, styleName: b.name, contentUrl: a.url, styleUrl: b.url,
+            content: ca?.capture ?? null, style: cb?.capture ?? null,
+            logoUrl: `/api/fuse-logo/img?id=${id}`,
+            heroImageUrl: heroUrl,
+          }),
+          screenshots: [ca?.screenshot, cb?.screenshot].filter((s): s is Buffer => !!s),
+        },
+        signal,
+      )
+    const [page, hero] = await Promise.allSettled([makePage(), makeHero()])
+    if (hero.status === 'rejected') console.warn(`[site] hero image failed: ${hero.reason instanceof Error ? hero.reason.message : 'error'}`)
+    if (page.status === 'rejected') throw page.reason
+    const html = page.value
     mkdirSync(pagesDir, { recursive: true })
     writeFileSync(pageFile(id), html)
     job.status = 'ready'
@@ -54,6 +116,8 @@ export function createSiteJobs(options: FuseOptions, capturer: Capturer, pagesDi
 
   return {
     pageFile,
+    heroFile,
+    heroFallback: (id: string): string | undefined => heroFallbacks.get(id),
     /** Starts (or joins) the job for an ordered pair: a = content, b = style. */
     start(a: SiteRef, b: SiteRef): { id: string; status: SiteStatus; error?: string } {
       const id = pairId(a.id, b.id)

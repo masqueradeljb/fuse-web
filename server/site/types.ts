@@ -19,6 +19,18 @@ export interface SiteContent {
   sections: { heading: string; text: string }[]
 }
 
+export interface SiteHero {
+  eyebrow: string
+  headline: string
+  subhead: string
+  cta: string
+  media: 'video' | 'image' | 'background' | 'none'
+  /** absolute http(s) URL of the hero video/image/background (never blob:) */
+  src?: string
+  /** video poster, if any */
+  poster?: string
+}
+
 export interface SiteCapture {
   url: string
   tokens: SiteTokens
@@ -26,4 +38,8 @@ export interface SiteCapture {
   /** absolute URLs, largest first */
   images: string[]
   logo?: string
+  hero: SiteHero
+  /** meta description */
+  description: string
+  ogImage?: string
 }

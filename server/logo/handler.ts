@@ -50,7 +50,7 @@ export async function handleLogo(req: IncomingMessage, res: ServerResponse): Pro
 }
 
 /** fetch that follows up to MAX_REDIRECTS itself, refusing non-http(s) and private targets. Null on failure. */
-async function guardedFetch(start: URL, init: RequestInit): Promise<Response | null> {
+export async function guardedFetch(start: URL, init: RequestInit): Promise<Response | null> {
   let current = start
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     if (!/^https?:$/.test(current.protocol) || isBlockedHost(current.hostname)) return null
@@ -69,7 +69,7 @@ async function guardedFetch(start: URL, init: RequestInit): Promise<Response | n
 }
 
 /** Reads at most maxBytes; null if the body is larger. */
-async function readCapped(r: Response, maxBytes: number, truncate = false): Promise<Buffer | null> {
+export async function readCapped(r: Response, maxBytes: number, truncate = false): Promise<Buffer | null> {
   const declared = Number(r.headers.get('content-length') ?? 0)
   if (!truncate && declared > maxBytes) {
     void r.body?.cancel().catch(() => {})

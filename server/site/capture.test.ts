@@ -4,11 +4,11 @@ import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { createCapturer } from './capture'
 
-const FIXTURE = `<!doctype html><html><head><title>Acme | Rockets</title>
+const FIXTURE = `<!doctype html><html><head><title>Acme | Rockets</title><base href="https://acme.test/"><meta name="description" content="Rockets for the people.">
 <style>body{background:#101820;color:#f2f2f2;font-family:Georgia,serif}h1{font-family:Impact,sans-serif;font-size:64px}
 .btn{background:#ff5500;color:#fff;border-radius:12px;padding:14px 22px;display:inline-block}</style></head>
 <body><header><nav><a href="/">Home</a><a href="/pricing">Pricing</a></nav></header>
-<main><h1>Rockets for everyone</h1><p>Launch in minutes.</p><a class="btn" href="/start">Get started</a>
+<main><section style="height:400px"><video poster="/p.jpg" style="width:300px;height:200px"><source src="/v.mp4"></video><h1>Rockets for everyone</h1><p>Launch in minutes.</p><a class="btn" href="/start">Get started</a></section>
 <h2>Fast</h2><p>Really fast.</p><h2>Safe</h2><p>Very safe.</p></main></body></html>`
 
 const FIXTURE2 = `<!doctype html><html><head><title>Beta</title>
@@ -35,6 +35,11 @@ describe('capturer', () => {
     expect(cap.content.subhead).toBe('Launch in minutes.')
     expect(cap.content.ctas).toContain('Get started')
     expect(cap.content.sections.map((s) => s.heading)).toEqual(['Fast', 'Safe'])
+
+    expect(cap.hero.media).toBe('video')
+    expect(cap.hero.src).toMatch(/\/v\.mp4$/)
+    expect(cap.hero.poster).toMatch(/\/p\.jpg$/)
+    expect(cap.description).toBe('Rockets for the people.')
 
     const cap2 = await capturer.captureHtml('https://beta.test/', FIXTURE2)
     expect(cap2.tokens.button.background).toBe('rgb(0, 170, 119)')

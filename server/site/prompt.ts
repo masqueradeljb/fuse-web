@@ -9,36 +9,55 @@ export interface PagePromptInput {
   styleUrl: string
   /** same-origin path to the fused logo */
   logoUrl: string
+  /** same-origin path to the generated on-angle hero image */
+  heroImageUrl: string
 }
 
 const json = (v: unknown) => JSON.stringify(v, null, 1)
 
-/** Left site = content and structure; right site = visual style. */
+/** Left site = the product; right site = the reference (style, structure, hero format, marketing angle). */
 export function buildPagePrompt(p: PagePromptInput): string {
+  const video = p.style?.hero.media === 'video' && p.style.hero.src ? p.style.hero : null
+  const A = p.contentName
+  const B = p.styleName
   return [
     `You are a senior web designer. Build ONE fused landing page.`,
     ``,
-    `CONTENT comes from ${p.contentName} (${p.contentUrl}): what the product is, its headline, copy, sections and product imagery.`,
-    `STYLE comes from ${p.styleName} (${p.styleUrl}): color palette, typography, button and card shapes, radii, shadows, spacing, overall mood.`,
-    `Result: ${p.contentName}'s product, presented as if ${p.styleName}'s design team built it. Invent a short fused brand name blending both names.`,
+    `LEFT / PRODUCT = ${A} (${p.contentUrl}): what the product is, who it's for, its real facts and features, its logo.`,
+    `RIGHT / REFERENCE = ${B} (${p.styleUrl}): visual style (tokens, typography, buttons, radii, spacing), page structure and section rhythm, hero format, and its marketing angle.`,
+    ``,
+    `First, silently identify (1) ${B}'s positioning angle in one sentence — the promise it makes to its audience (e.g. "economic opportunity for drivers"); (2) ${A}'s product and audience. Then write the page for ${A}'s audience using ${B}'s angle (e.g. "economic opportunity for builders"). Mirror ${B}'s hero layout and section order. Invent a short fused brand name blending both names.`,
     ``,
     `Rules:`,
     `- Output ONLY a complete HTML document (<!doctype html> … </html>). No markdown, no explanation.`,
     `- All CSS in one <style> tag. Define the style tokens as CSS custom properties on :root and use them.`,
     `- No <script>, no inline event handlers, no iframes, no forms that submit anywhere.`,
-    `- Fonts: use the style site's font-family names with sensible system fallbacks. You may add one Google Fonts <link> if a family is clearly a Google font.`,
-    `- Sections: sticky nav (fused logo + 3–5 links), hero (headline, subhead, primary + secondary button, a product image), 3 feature cards, a CTA band, a footer.`,
+    `- Fonts: use the reference site's font-family names with sensible system fallbacks. You may add one Google Fonts <link> if a family is clearly a Google font.`,
+    `- Structure: follow ${B}'s section order; typically sticky nav (fused logo + 3–5 links), hero in ${B}'s format, 3 feature cards, a CTA band, a footer.`,
     `- Put the fused logo in the nav and once in the hero: <img src="${p.logoUrl}" alt="fused logo">.`,
-    `- Images: only use URLs from the content site's "images" list below (absolute https URLs). If none, use CSS shapes/gradients in the style palette instead.`,
-    `- Copy: rewrite the content site's messaging in the style site's voice; keep it about the content site's product. Short and punchy.`,
+    `- Hero visual: use <img src="${p.heroImageUrl}" alt=""> as the main hero visual.`,
+    video
+      ? `- Also place <video autoplay muted loop playsinline${video.poster ? ` poster="${video.poster}"` : ''} src="${video.src}"></video> as a full-bleed background behind the hero with a dark tint overlay so text stays readable.`
+      : `- Do not use any <video>.`,
+    `- Images: for feature sections use only URLs from ${A}'s "images" list below (absolute https URLs); never use ${B}'s images (the hero video above is the only exception). If none, use CSS shapes/gradients in the reference palette instead.`,
+    `- Copy: rewrite ${A}'s messaging in ${B}'s voice and angle; keep the facts about ${A}'s product. Short and punchy.`,
     `- Responsive (single column under 720px). Accessible contrast.`,
     ``,
-    `CONTENT site capture (${p.contentName}):`,
-    p.content ? json({ content: p.content.content, images: p.content.images }) : `(capture unavailable — infer from the name and URL)`,
+    `PRODUCT site capture (${A}):`,
+    p.content
+      ? json({ content: p.content.content, hero: p.content.hero, description: p.content.description, images: p.content.images })
+      : `(capture unavailable — infer from the name and URL)`,
     ``,
-    `STYLE site capture (${p.styleName}):`,
-    p.style ? json({ tokens: p.style.tokens, content: { title: p.style.content.title, headline: p.style.content.headline } }) : `(capture unavailable — infer the style from the name and screenshot if given)`,
+    `REFERENCE site capture (${B}):`,
+    p.style
+      ? json({
+          tokens: p.style.tokens,
+          content: { title: p.style.content.title, headline: p.style.content.headline, sectionHeadings: p.style.content.sections.map((s) => s.heading) },
+          hero: p.style.hero,
+          description: p.style.description,
+        })
+      : `(capture unavailable — infer the style from the name and screenshot if given)`,
     ``,
-    `Screenshots follow: first the CONTENT site, then the STYLE site (if available).`,
+    `Screenshots follow: first the PRODUCT site, then the REFERENCE site (if available).`,
   ].join('\n')
 }

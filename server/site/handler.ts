@@ -8,6 +8,7 @@ const PAGE_CSP = [
   "default-src 'none'",
   "img-src 'self' https: data:",
   "style-src 'unsafe-inline' https://fonts.googleapis.com",
+  "media-src https:",
   "font-src https://fonts.gstatic.com data:",
   "base-uri 'none'",
   "form-action 'none'",
@@ -46,6 +47,23 @@ export function createSiteHandler(jobs: Jobs) {
         res.setHeader('content-security-policy', PAGE_CSP)
         res.setHeader('cache-control', 'no-store')
         return void res.end(readFileSync(file))
+      }
+      if (req.method === 'GET' && url.pathname === '/hero') {
+        if (!validId) return sendJson(res, 404, { error: 'unknown hero' })
+        const file = jobs.heroFile(id)
+        if (existsSync(file)) {
+          res.statusCode = 200
+          res.setHeader('content-type', 'image/png')
+          res.setHeader('cache-control', 'no-store')
+          return void res.end(readFileSync(file))
+        }
+        const fallback = jobs.heroFallback(id)
+        if (fallback) {
+          res.statusCode = 302
+          res.setHeader('location', fallback)
+          return void res.end()
+        }
+        return sendJson(res, 404, { error: 'hero not available' })
       }
       sendJson(res, 404, { error: 'not found' })
     } catch {

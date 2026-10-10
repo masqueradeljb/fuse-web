@@ -56,6 +56,13 @@ site's content in the right site's style. Pulling the card up opens `fused.html`
 "building…" view and switches to the page when it is ready.
 
 - One-time Chromium install for the capturer: `npx playwright install chromium`.
+- Angle transfer: the left site is the product, the right site is the reference. Gemini is
+  asked to identify the reference's marketing angle (e.g. "economic opportunity for drivers")
+  and rewrite the page for the product's audience in the reference's hero layout. In parallel
+  an on-angle hero image is generated from the reference's hero visual (OpenAI image edits,
+  about $0.03 extra per fused page, served at `/api/fuse-site/hero?id=…`; falls back to the
+  reference's own hero image if generation fails). If the reference hero has a video, it is
+  embedded as the hero background.
 - Captures are cached in `cache/sites`, generated pages in `cache/pages`.
 - `GEMINI_API_KEY` (page) is separate from `OPENAI_API_KEY` (logo). Tunables: `FUSE_PAGE_MODEL`,
   `FUSE_PAGE_THINKING`, `FUSE_MAX_PAGES`.
