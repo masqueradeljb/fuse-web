@@ -1,4 +1,4 @@
-# fuse-web
+# THE Fused Web
 
 Grab two website logos with your hands and fuse them into something new.
 

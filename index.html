@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>fuse-web</title>
+    <title>THE Fused Web</title>
   </head>
   <body>
     <video id="camera" playsinline muted></video>
@@ -13,13 +13,16 @@
     <div id="hint" hidden>Show both hands — pinch or make a fist to grab</div>
     <pre id="debug" hidden></pre>
     <section id="start">
-      <h1>fuse-web</h1>
-      <p>Enter your site. We'll grab its logo so you can fuse it with famous sites — with your hands.</p>
-      <form id="start-form" autocomplete="off">
-        <input name="site" placeholder="yoursite.com" spellcheck="false" autofocus />
-        <button type="submit">Start</button>
-      </form>
-      <p id="start-status" class="status"></p>
+      <canvas id="start-backdrop" aria-hidden="true"></canvas>
+      <h1>THE Fused Web</h1>
+      <div class="start-panel">
+        <p>Paste your URL, then fuse it.</p>
+        <form id="start-form" autocomplete="off">
+          <input name="site" placeholder="yoursite.com" aria-label="Your site URL" spellcheck="false" autofocus />
+          <button type="submit">Fuse</button>
+        </form>
+        <p id="start-status" class="status" aria-live="polite"></p>
+      </div>
     </section>
     <form id="add-site" autocomplete="off" hidden>
       <input name="site" placeholder="+ add your site" spellcheck="false" />

@@ -13,6 +13,7 @@ import { HandTracker } from './tracking/HandTracker'
 import { bindSiteForm } from './ui/siteForm'
 import { bindOverlayClose, openFused } from './ui/fusedView'
 import { hideFusedTitle, showFusedTitle } from './ui/fusedTitle'
+import { startBackdrop } from './ui/startBackdrop'
 import type { InputFrame, Site, TrackedHand } from './types'
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!
@@ -27,6 +28,7 @@ const addForm = document.querySelector<HTMLFormElement>('#add-site')!
 const addStatus = document.querySelector<HTMLElement>('#add-status')!
 const overlay = document.querySelector<HTMLElement>('#fused-overlay')!
 const fusedTitle = document.querySelector<HTMLElement>('#fused-title')!
+const backdrop = startBackdrop(document.querySelector<HTMLCanvasElement>('#start-backdrop')!, REFERENCE_SITES)
 
 const fuseClient = new AiFuseClient()
 /** used when the dev server has no OpenAI key */
@@ -168,6 +170,7 @@ async function runSite(a: Site, b: Site, fuseId: number) {
 }
 
 function startStage(site: Site) {
+  backdrop.stop()
   start.hidden = true
   addForm.hidden = false
   renderer.addSite(site)
