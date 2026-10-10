@@ -53,8 +53,8 @@ describe('fuse handler', () => {
     const res = await call(h, 'POST', '/', body())
     expect(res.statusCode).toBe(200)
     const json = JSON.parse(String(res.body))
-    expect(json).toMatchObject({ id: 'mine.com__spotify', cached: false, logoUrl: expect.stringMatching(/^\/api\/fuse-logo\/img\?id=mine\.com__spotify/) })
-    expect(existsSync(join(dir, 'mine.com__spotify.png'))).toBe(true)
+    expect(json).toMatchObject({ id: expect.stringMatching(/^[a-f0-9]{16}$/), cached: false, logoUrl: expect.stringMatching(/^\/api\/fuse-logo\/img\?id=[a-f0-9]{16}&v=/) })
+    expect(existsSync(join(dir, `${json.id}.png`))).toBe(true)
 
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe('https://api.openai.com/v1/images/edits')
@@ -65,7 +65,7 @@ describe('fuse handler', () => {
     expect(form.getAll('image[]')).toHaveLength(2)
     expect(String(form.get('prompt'))).toContain('Image 1 is the logo of Mine')
 
-    const img = await call(h, 'GET', '/img?id=mine.com__spotify')
+    const img = await call(h, 'GET', `/img?id=${json.id}`)
     expect(img.statusCode).toBe(200)
     expect(img.headers['content-type']).toBe('image/png')
   })
@@ -103,5 +103,60 @@ describe('fuse handler', () => {
     expect(res.statusCode).toBe(502)
     expect(String(res.body)).toContain('Invalid size')
     expect(String(res.body)).not.toContain('test-key')
+  })
+
+  it('gives distinct pairs distinct ids (incl. old collisions, order) and 404s bad ids', async () => {
+    stubOpenAI()
+    const h = createFuseHandler(options(), dir)
+    const idOf = async (aid: string, bid: string) =>
+      JSON.parse(String((await call(h, 'POST', '/', body({ a: { id: aid, name: 'A', png: dataUrl }, b: { id: bid, name: 'B', png: dataUrl } }))).body)).id as string
+    const ids = [await idOf('a__b', 'c'), await idOf('a', 'b__c'), await idOf('A.com', 'x'), await idOf('a.com', 'x'), await idOf('x', 'y'), await idOf('y', 'x')]
+    expect(new Set(ids).size).toBe(ids.length)
+    for (const id of ['abc', '../../etc/passwd', 'AAAAAAAAAAAAAAAA', 'mine.com__spotify', '0123456789abcdef']) {
+      expect((await call(h, 'GET', `/img?id=${encodeURIComponent(id)}`)).statusCode).toBe(404)
+    }
+  })
+
+  it('hides OpenAI auth errors behind a generic message', async () => {
+    for (const status of [401, 403]) {
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: { message: 'Incorrect API key provided: sk-test...abcd' } }), { status })))
+      const res = await call(createFuseHandler(options(), dir), 'POST', '/', body())
+      expect(res.statusCode).toBe(502)
+      expect(String(res.body)).toContain('OpenAI rejected the API key')
+      expect(String(res.body)).not.toContain('sk-test')
+      expect(String(res.body)).not.toContain('abcd')
+    }
+  })
+
+  it('retries once at 1024x1024 when the size is rejected, and keeps using it', async () => {
+    const seen: string[] = []
+    const fetchMock = vi.fn(async (_u: string, init: RequestInit) => {
+      const size = String((init.body as FormData).get('size'))
+      seen.push(size)
+      if (size === '512x512') return new Response(JSON.stringify({ error: { message: "Invalid value for 'size'" } }), { status: 400 })
+      return new Response(JSON.stringify({ data: [{ b64_json: PNG_B64 }] }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const h = createFuseHandler(options({ maxGenerations: 1 }), dir)
+    expect((await call(h, 'POST', '/', body())).statusCode).toBe(200)
+    expect(seen).toEqual(['512x512', '1024x1024'])
+  })
+
+  it('dedupes concurrent requests for the same pair', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    const fetchMock = vi.fn(async () => {
+      await gate
+      return new Response(JSON.stringify({ data: [{ b64_json: PNG_B64 }] }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const h = createFuseHandler(options({ maxGenerations: 1 }), dir)
+    const p1 = call(h, 'POST', '/', body())
+    const p2 = call(h, 'POST', '/', body())
+    await new Promise((r) => setTimeout(r, 50))
+    release()
+    const [r1, r2] = await Promise.all([p1, p2])
+    expect([r1.statusCode, r2.statusCode]).toEqual([200, 200])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })
