@@ -18,8 +18,14 @@ export type GripConfig = typeof gripConfig
 export const sceneConfig = {
   /** hover/grab radius = logo radius × this */
   hoverFactor: 1.3,
-  /** two held logos fuse when closer than this × slot diameter */
-  fuseDistanceFactor: 1.2,
+  /** push depth (0–1 past contact) below which a collision doesn't charge */
+  chargeMinPush: 0.08,
+  /** charge per second at the minimum push… */
+  chargeBase: 0.8,
+  /** …plus this × push depth */
+  chargeGain: 2.2,
+  /** charge lost per second when not pushing */
+  chargeDecay: 1.5,
   /** spring follow rate, per second */
   followStiffness: 18,
   /** fly-back animation length */

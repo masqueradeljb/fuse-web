@@ -1,4 +1,4 @@
-import { sameRef, type FuseState, type ItemRef, type Scene } from '../scene/Scene'
+import { sameRef, type Collision, type FuseState, type Held, type ItemRef, type Scene } from '../scene/Scene'
 import { coverRect } from '../tracking/coords'
 import type { Point, Site, TrackedHand } from '../types'
 import { logoImage } from './logoImages'
@@ -11,6 +11,10 @@ const BURST_MS = 1200
 const FLASH_MS = 250
 const REVEAL_DELAY_MS = 120
 const REVEAL_MS = 400
+/** collision: max live seam sparks */
+const SEAM_SPARKS = 80
+/** collision: screen shake starts at this charge */
+const SHAKE_FROM = 0.8
 
 interface Spark {
   ang: number
@@ -30,6 +34,18 @@ interface Bit {
   vr: number
   w: number
   h: number
+  c: 0 | 1
+}
+
+/** A short-lived spark thrown out of the seam between two pressed logos. */
+interface SeamSpark {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  life: number
+  max: number
+  size: number
   c: 0 | 1
 }
 
@@ -73,6 +89,8 @@ export class Renderer {
   private tmp: Point = { x: 0, y: 0 }
   private dpr = 1
   private reducedMotion = false
+  private seam: SeamSpark[] = []
+  private seamLastNow = 0
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -110,6 +128,12 @@ export class Renderer {
     ctx.fillStyle = '#0b0b10'
     ctx.fillRect(0, 0, W, H)
 
+    // near full charge the whole frame shakes
+    const col = scene.collision
+    const shake = !this.reducedMotion && col && col.charge > SHAKE_FROM ? (6 * (col.charge - SHAKE_FROM)) / (1 - SHAKE_FROM) : 0
+    ctx.save()
+    if (shake) ctx.translate((Math.random() * 2 - 1) * shake, (Math.random() * 2 - 1) * shake)
+
     if (video && video.readyState >= 2) {
       const r = coverRect(video.videoWidth, video.videoHeight, W, H)
       ctx.save()
@@ -125,9 +149,11 @@ export class Renderer {
     this.drawSlots(scene)
     this.drawFlights(scene)
     this.drawHeld(scene)
+    this.drawCollision(scene)
     this.drawCardZones(scene)
     this.drawFuse(scene)
     this.drawCursors(scene)
+    ctx.restore()
     if (this.showDebug) this.drawLandmarks(hands)
   }
 
@@ -202,8 +228,152 @@ export class Renderer {
   }
 
   private drawHeld(scene: Scene): void {
+    const col = scene.collision
     for (const h of scene.held.values()) {
-      if (h.siteId) this.drawLogo(scene.site(h.siteId), h.pos, scene.heldRadius(h), true)
+      if (!h.siteId) continue
+      if (col && h.from.kind === 'slot' && !this.reducedMotion) this.drawPressed(scene, h, col)
+      else this.drawLogo(scene.site(h.siteId), h.pos, scene.heldRadius(h), true)
+    }
+  }
+
+  /** A held slot logo pressed against the other: flattened at the seam and trembling with charge. */
+  private drawPressed(scene: Scene, h: Held, col: Collision): void {
+    const { ctx } = this
+    const r = scene.heldRadius(h)
+    const { axis, push, charge } = col
+    // which way the seam is from this logo
+    const side = (col.point.x - h.pos.x) * axis.x + (col.point.y - h.pos.y) * axis.y >= 0 ? 1 : -1
+    const jx = (Math.random() * 2 - 1) * 4 * charge
+    const jy = (Math.random() * 2 - 1) * 4 * charge
+    const p = { x: h.pos.x + jx, y: h.pos.y + jy }
+    // scale about the contact edge so the logo flattens against the seam rather than shrinking away from it
+    const ax = p.x + axis.x * side * r
+    const ay = p.y + axis.y * side * r
+    const ang = Math.atan2(axis.y, axis.x)
+    ctx.save()
+    ctx.translate(ax, ay)
+    ctx.rotate(ang)
+    ctx.scale(1 - 0.18 * push, 1 + 0.08 * push)
+    ctx.rotate(-ang)
+    ctx.translate(-ax, -ay)
+    this.drawLogo(scene.site(h.siteId as string), p, r, true)
+    ctx.restore()
+  }
+
+  /** Collision fx: seam glow and sparks, the charge ring, and a nudge while the push is too light. */
+  private drawCollision(scene: Scene): void {
+    const { ctx } = this
+    const col = scene.collision
+    const now = scene.now
+    const dt = this.seamLastNow ? Math.min((now - this.seamLastNow) / 1000, 0.05) : 0
+    this.seamLastNow = now
+    const motion = !this.reducedMotion
+    const sparks = this.seam
+    if (!col && !sparks.length) return
+
+    const ca = vivid(scene.site(scene.slots[0]).color)
+    const cb = vivid(scene.site(scene.slots[1]).color)
+    const R = scene.layout.slotRadius
+
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    if (col && motion && col.push > 0) {
+      // seam glow: a hot spot that grows with the push and brightens with the charge
+      const gr = R * (0.35 + 0.5 * col.push)
+      const g = ctx.createRadialGradient(col.point.x, col.point.y, 0, col.point.x, col.point.y, gr)
+      g.addColorStop(0, `rgba(255, 255, 255, ${0.35 + 0.5 * col.charge})`)
+      g.addColorStop(1, 'rgba(255, 255, 255, 0)')
+      ctx.fillStyle = g
+      ctx.beginPath()
+      ctx.arc(col.point.x, col.point.y, gr, 0, Math.PI * 2)
+      ctx.fill()
+
+      // sparks squeezed out of the seam, roughly perpendicular to the push
+      const n = Math.round(col.push * 6)
+      const nx = -col.axis.y
+      const ny = col.axis.x
+      for (let i = 0; i < n && sparks.length < SEAM_SPARKS; i++) {
+        const dir = Math.random() < 0.5 ? -1 : 1
+        const spread = (Math.random() * 2 - 1) * 0.6
+        const speed = R * (2 + Math.random() * 3) * (0.6 + 0.6 * col.charge)
+        const vx = (nx * dir + col.axis.x * spread) * speed
+        const vy = (ny * dir + col.axis.y * spread) * speed
+        const along = (Math.random() * 2 - 1) * R * 0.25
+        const max = 0.18 + Math.random() * 0.25
+        sparks.push({
+          x: col.point.x + nx * along,
+          y: col.point.y + ny * along,
+          vx,
+          vy,
+          life: max,
+          max,
+          size: 1.2 + Math.random() * 1.8,
+          c: (i % 2) as 0 | 1,
+        })
+      }
+    }
+    if (!motion) sparks.length = 0
+
+    // sparks: streaks along their velocity, slowed by drag, falling a little, fading out
+    ctx.lineCap = 'round'
+    const drag = Math.exp(-dt * 4)
+    let live = 0
+    for (const s of sparks) {
+      s.life -= dt
+      if (s.life <= 0) continue
+      s.vx *= drag
+      s.vy = s.vy * drag + R * 3 * dt
+      s.x += s.vx * dt
+      s.y += s.vy * dt
+      const k = s.life / s.max
+      ctx.globalAlpha = k
+      ctx.strokeStyle = s.c === 0 ? ca : cb
+      ctx.lineWidth = s.size
+      ctx.beginPath()
+      ctx.moveTo(s.x, s.y)
+      ctx.lineTo(s.x - s.vx * 0.03, s.y - s.vy * 0.03)
+      ctx.stroke()
+      sparks[live++] = s
+    }
+    sparks.length = live
+    ctx.restore()
+
+    if (!col) return
+    const { point: p, axis, charge } = col
+    const rr = R * 0.5
+
+    // charge ring: faint full track, then the A → B sweep, thicker and hotter as it fills
+    ctx.save()
+    ctx.lineCap = 'round'
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)'
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, rr, 0, Math.PI * 2)
+    ctx.stroke()
+    if (charge > 0) {
+      const g = ctx.createLinearGradient(p.x - axis.x * rr, p.y - axis.y * rr, p.x + axis.x * rr, p.y + axis.y * rr)
+      g.addColorStop(0, ca)
+      g.addColorStop(1, cb)
+      ctx.strokeStyle = g
+      ctx.lineWidth = 3 + 6 * charge
+      ctx.shadowColor = 'rgba(255, 255, 255, 0.9)'
+      ctx.shadowBlur = 18 * charge
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, rr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * charge)
+      ctx.stroke()
+    }
+    ctx.restore()
+
+    if (col.push > 0 && charge < 0.3) {
+      ctx.save()
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'top'
+      ctx.font = '700 18px system-ui, sans-serif'
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.9 * (1 - charge / 0.3) + 0.1})`
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.6)'
+      ctx.shadowBlur = 6
+      ctx.fillText('push harder!', p.x, p.y + scene.layout.slotRadius * 1.25 + 8)
+      ctx.restore()
     }
   }
 

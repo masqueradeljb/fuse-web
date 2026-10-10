@@ -142,26 +142,6 @@ describe('Scene basics', () => {
 })
 
 describe('Scene fuse', () => {
-  it('two hands holding the slot logos fuse when brought together', () => {
-    const { scene, onFuse, step } = setup()
-    step([cur(1, 300, 300, true), cur(2, 700, 300, true)], [start(1, 300, 300), start(2, 700, 300)])
-    expect(scene.held.size).toBe(2)
-    expect(onFuse).not.toHaveBeenCalled()
-    step([cur(1, 480, 300, true), cur(2, 520, 300, true)])
-    expect(onFuse).toHaveBeenCalledTimes(1)
-    expect(onFuse.mock.calls[0].slice(0, 2).map((s: Site) => s.id)).toEqual(['s0', 's6'])
-    expect(scene.fuse).toMatchObject({ siteA: 's0', siteB: 's6', status: 'fusing' })
-    expect(scene.held.size).toBe(0)
-  })
-
-  it('two held logos far apart do not fuse', () => {
-    const { scene, onFuse, step } = setup()
-    step([cur(1, 300, 300, true), cur(2, 700, 300, true)], [start(1, 300, 300), start(2, 700, 300)])
-    step([cur(1, 350, 200, true), cur(2, 650, 400, true)])
-    expect(onFuse).not.toHaveBeenCalled()
-    expect(scene.fuse).toBeNull()
-  })
-
   it('one hand: dropping a slot logo onto the other slot fuses', () => {
     const { scene, onFuse, step } = setup()
     step([cur(1, 300, 300, true)], [start(1, 300, 300)])
@@ -300,6 +280,47 @@ describe('Scene fuse', () => {
   })
 })
 
+describe('Scene collision fuse', () => {
+  const grabBoth = (step: ReturnType<typeof setup>['step']) =>
+    step([cur(1, 300, 300, true), cur(2, 700, 300, true)], [start(1, 300, 300), start(2, 700, 300)])
+
+  it('touching logos collide instead of overlapping', () => {
+    const { scene, step } = setup()
+    grabBoth(step)
+    step([cur(1, 480, 300, true), cur(2, 520, 300, true)])
+    const [a, b] = [...scene.held.values()]
+    const contact = 2 * scene.layout.slotRadius * sceneConfig.heldScale
+    expect(Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y)).toBeGreaterThanOrEqual(contact - 0.5)
+    expect(scene.collision?.push).toBeGreaterThan(0)
+    expect(scene.fuse).toBeNull()
+  })
+
+  it('pushing hard for about a second fuses', () => {
+    const { scene, onFuse, step } = setup()
+    grabBoth(step)
+    for (let i = 0; i < 70 && !scene.fuse; i++) step([cur(1, 470, 300, true), cur(2, 530, 300, true)])
+    expect(onFuse).toHaveBeenCalledTimes(1)
+    expect(onFuse.mock.calls[0].slice(0, 2).map((s: Site) => s.id)).toEqual(['s0', 's6'])
+    expect(scene.held.size).toBe(0)
+    expect(scene.collision).toBeNull()
+  })
+
+  it('a light touch does not fuse, and easing off drains the charge', () => {
+    const { scene, onFuse, step } = setup()
+    grabBoth(step)
+    const contact = 2 * scene.layout.slotRadius * sceneConfig.heldScale
+    // cursors exactly at contact distance: push 0
+    for (let i = 0; i < 120; i++) step([cur(1, 500 - contact / 2, 300, true), cur(2, 500 + contact / 2, 300, true)])
+    expect(onFuse).not.toHaveBeenCalled()
+    for (let i = 0; i < 20; i++) step([cur(1, 470, 300, true), cur(2, 530, 300, true)])
+    const charged = scene.collision?.charge ?? 0
+    expect(charged).toBeGreaterThan(0)
+    for (let i = 0; i < 60; i++) step([cur(1, 300, 300, true), cur(2, 700, 300, true)])
+    expect(scene.collision?.charge ?? 0).toBe(0)
+    expect(onFuse).not.toHaveBeenCalled()
+  })
+})
+
 describe('Scene card zones follow the hand', () => {
   function finished() {
     const ctx = setup()
@@ -353,7 +374,7 @@ describe('Scene grab offset and flights', () => {
     expect(scene.held.get(1)?.pos).toEqual({ x: 400, y: 400 })
   })
 
-  it('does not fuse on a 4:3 window when gripping the inner edges', () => {
+  it('on a 4:3 window, logos gripped at the inner edges collide and fuse only when pushed', () => {
     const onFuse = vi.fn()
     const scene = new Scene({
       leftSites: SITES.slice(0, 6),
@@ -380,8 +401,8 @@ describe('Scene grab offset and flights', () => {
     for (let i = 0; i < 5; i++) step([cur(1, a.x, a.y, true), cur(2, b.x, b.y, true)])
     expect(onFuse).not.toHaveBeenCalled()
     const mid = scene.layout.center.x
-    // grabbed at the inner edges, the logos touch before the cursors meet
-    step([cur(1, mid + 10, y, true), cur(2, mid - 10, y, true)])
+    // grabbed at the inner edges, the logos touch before the cursors meet; keep pushing
+    for (let i = 0; i < 70 && !scene.fuse; i++) step([cur(1, mid + slotRadius, y, true), cur(2, mid - slotRadius, y, true)])
     expect(onFuse).toHaveBeenCalledTimes(1)
   })
 

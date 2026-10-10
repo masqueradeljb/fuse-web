@@ -37,6 +37,18 @@ export interface Flight {
   hideSlot?: 0 | 1
 }
 
+/** Two held slot logos pressed into each other. */
+export interface Collision {
+  /** contact point between the two logos */
+  point: Point
+  /** unit vector from logo A to logo B */
+  axis: Point
+  /** 0–1: how far the hands push past contact */
+  push: number
+  /** 0–1: fuses at 1 */
+  charge: number
+}
+
 export type FuseStatus = 'fusing' | 'done' | 'error'
 
 export interface FuseState {
@@ -92,6 +104,8 @@ export class Scene {
   cursors: HandCursor[] = []
   flights: Flight[] = []
   fuse: FuseState | null = null
+  /** set while two held slot logos touch, or while their charge drains */
+  collision: Collision | null = null
   now = 0
 
   private readonly sitesById = new Map<string, Site>()
@@ -190,7 +204,7 @@ export class Scene {
 
     this.flights = this.flights.filter((f) => now - f.startedAt < this.config.returnMs)
     this.updateHover()
-    this.checkTwoHandFuse()
+    this.collide(dt)
   }
 
   /** 0 → 1 with ease-out, for drawing a flight */
@@ -344,14 +358,52 @@ export class Scene {
     this.fly(siteId, h.pos, L.slots[h.from.slot], r, L.slotRadius, h.from.slot)
   }
 
-  private checkTwoHandFuse(): void {
-    if (this.fuse) return
-    const holds = [...this.held.values()].filter((h) => h.from.kind === 'slot')
-    if (holds.length !== 2) return
-    const [a, b] = holds
-    if (dist(a.pos, b.pos) < this.config.fuseDistanceFactor * 2 * this.layout.slotRadius) {
-      this.startFuse(lerp(a.pos, b.pos, 0.5))
+  /**
+   * Two held slot logos can't overlap: they stop at contact. How far the hands push past
+   * contact charges the fuse; easing off drains it.
+   */
+  private collide(dt: number): void {
+    const holds = this.fuse ? [] : [...this.held.values()].filter((h) => h.from.kind === 'slot')
+    if (holds.length !== 2) {
+      this.collision = null
+      return
     }
+    const [a, b] = holds
+    const c = this.config
+    const contact = 2 * this.layout.slotRadius * c.heldScale
+    const prev = this.collision
+    // axis A→B: from the logos while apart; while pressed, keep the last one, so hands that
+    // cross over push harder instead of passing the logos through each other
+    const pd = dist(a.pos, b.pos)
+    const axis =
+      prev && pd < contact + 0.5
+        ? prev.axis
+        : pd > 1e-6
+          ? { x: (b.pos.x - a.pos.x) / pd, y: (b.pos.y - a.pos.y) / pd }
+          : { x: 1, y: 0 }
+    if (pd < contact) {
+      const mid = lerp(a.pos, b.pos, 0.5)
+      a.pos = { x: mid.x - (axis.x * contact) / 2, y: mid.y - (axis.y * contact) / 2 }
+      b.pos = { x: mid.x + (axis.x * contact) / 2, y: mid.y + (axis.y * contact) / 2 }
+    }
+    // how far the hands want the logos to go, measured along the axis (negative = crossed)
+    const want = (b.target.x - a.target.x) * axis.x + (b.target.y - a.target.y) * axis.y
+    const push = Math.min(Math.max((contact - want) / contact, 0), 1)
+    const prevCharge = prev?.charge ?? 0
+    if (push <= 0 && prevCharge <= 0) {
+      this.collision = null
+      return
+    }
+    const charge =
+      push > c.chargeMinPush
+        ? prevCharge + dt * (c.chargeBase + c.chargeGain * push)
+        : Math.max(0, prevCharge - dt * c.chargeDecay)
+    if (charge >= 1) {
+      this.collision = null
+      this.startFuse(lerp(a.pos, b.pos, 0.5))
+      return
+    }
+    this.collision = { point: lerp(a.pos, b.pos, 0.5), axis, push, charge }
   }
 
   private startFuse(at: Point): void {
