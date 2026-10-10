@@ -8,6 +8,8 @@ interface HandState {
   startCount: number
   endCount: number
   lostCount: number
+  /** cursor = anchor(kind) + offset, so switching kind never moves the cursor */
+  offset: Point
   point: Point
 }
 
@@ -30,31 +32,57 @@ export class GestureEngine {
       const fist = fistRatio(lm)
       let s = this.states.get(hand.id)
       if (!s) {
-        s = { gripping: false, kind: 'pinch', startCount: 0, endCount: 0, lostCount: 0, point: cursorPoint(lm, 'pinch') }
+        s = { gripping: false, kind: 'pinch', startCount: 0, endCount: 0, lostCount: 0, offset: { x: 0, y: 0 }, point: cursorPoint(lm, 'pinch') }
         this.states.set(hand.id, s)
       }
       s.lostCount = 0
+
+      const anchor = (kind: GripKind) => cursorPoint(lm, kind)
+      /** Switch the anchor kind without moving the cursor. */
+      const setKind = (kind: GripKind) => {
+        if (kind === s.kind) return
+        const a = anchor(kind)
+        s.offset = { x: s.point.x - a.x, y: s.point.y - a.y }
+        s.kind = kind
+      }
+      const place = () => {
+        const a = anchor(s.kind)
+        s.point = { x: a.x + s.offset.x, y: a.y + s.offset.y }
+      }
 
       if (!s.gripping) {
         const candidate: GripKind | null =
           pinch < c.pinchThreshold ? 'pinch' : fist < c.fistThreshold ? 'fist' : null
         s.startCount = candidate ? s.startCount + 1 : 0
-        if (candidate) s.kind = candidate
-        s.point = cursorPoint(lm, candidate ?? 'pinch')
+        if (candidate === 'fist') {
+          setKind('fist')
+        } else {
+          s.kind = 'pinch'
+          s.offset = { x: 0, y: 0 }
+        }
+        place()
         if (candidate && s.startCount >= c.startFrames) {
           s.gripping = true
           s.endCount = 0
           events.push({ type: 'gripStart', handId: hand.id, point: s.point })
         }
       } else {
-        const released =
-          s.kind === 'pinch' ? pinch > c.pinchThreshold * c.releaseFactor : fist > c.fistThreshold * c.releaseFactor
-        s.endCount = released ? s.endCount + 1 : 0
-        s.point = cursorPoint(lm, s.kind)
+        const pinchHeld = pinch < c.pinchThreshold * c.releaseFactor
+        const fistHeld = fist < c.fistThreshold * c.releaseFactor
+        const currentHeld = s.kind === 'pinch' ? pinchHeld : fistHeld
+        if (!currentHeld && (s.kind === 'pinch' ? fist < c.fistThreshold : pinch < c.pinchThreshold)) {
+          setKind(s.kind === 'pinch' ? 'fist' : 'pinch')
+          s.endCount = 0
+        } else {
+          s.endCount = pinchHeld || fistHeld ? 0 : s.endCount + 1
+        }
+        place()
         if (s.endCount >= c.endFrames) {
+          events.push({ type: 'gripEnd', handId: hand.id, point: s.point })
           s.gripping = false
           s.startCount = 0
-          events.push({ type: 'gripEnd', handId: hand.id, point: s.point })
+          s.kind = 'pinch'
+          s.offset = { x: 0, y: 0 }
         }
       }
       cursors.push({ handId: hand.id, point: s.point, gripping: s.gripping, pinchRatio: pinch, fistRatio: fist })
