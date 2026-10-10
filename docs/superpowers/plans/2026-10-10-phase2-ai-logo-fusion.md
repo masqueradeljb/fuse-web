@@ -6,6 +6,8 @@
 
 **Architecture:** A second Vite dev-server middleware (`/api/fuse-logo`) next to `/api/logo`: pure prompt/options/cost modules plus a handler that calls `POST /v1/images/edits` with `fetch` + `FormData`, caches PNGs in `cache/fused/`, and caps generations. The browser renders both logos to 512×512 PNG data URLs, posts them via an `AiFuseClient`, and the Renderer cross-fades the result into the card.
 
+**Testing (owner preference):** lightweight — only necessary high-level API/function tests. Visual/DOM work is checked live, not unit-tested.
+
 **Tech Stack:** existing (Vite 8, TS 7, Vitest 4, Node 25 global `fetch`/`FormData`/`Blob`). No new runtime deps.
 
 **Spec:** `docs/superpowers/specs/2026-10-10-fuse-web-design.md` → "Phase 2 — AI logo fusion".
@@ -682,11 +684,25 @@ Add `private results = new Map<string, HTMLImageElement>()` and a helper:
 ```
 In `drawFuse`, in the non-fusing branch: if `f.status === 'done' && f.result?.logoUrl`, get the image; when loaded (`complete && naturalWidth > 0`), draw a white disc of radius `R * 0.9` at `p`, clip to it, and draw the image covering the disc (square fit to `R * 1.8`), with `globalAlpha = min(1, (scene.now - (f.doneAt ?? scene.now)) / 400)`; draw the two small logos underneath at `1 - alpha` so it cross-fades. If not loaded yet, keep drawing the two logos.
 
+- [ ] **Step 3b: Fusing effect (owner request — make the wait fun)**
+
+Generation can take 5–30 s, so the "fusing" state must look alive. Visual only, in `Renderer` (no tests). Keep it ≤ ~150 particles, no per-frame allocations in hot loops beyond small objects, and honor `matchMedia('(prefers-reduced-motion: reduce)')` (skip particles and flashes; keep the static card + text).
+- **Vortex:** while `f.status === 'fusing'`, the two small logos orbit the card center on a spiral whose radius breathes (`R·(0.25 + 0.1·sin(t))`), each trailing a comet tail (fading arc) in its brand color.
+- **Inflow sparks:** a ring of particles in A's and B's colors spawns around `1.6R` and spirals inward to the center, fading as they arrive; respawn continuously.
+- **Core:** a pulsing radial gradient blending A → B at the center (`globalCompositeOperation = 'lighter'`), plus a slowly rotating dashed energy ring in a conic/linear A→B gradient.
+- **Elapsed:** status text `fusing… 12s`.
+- **On done** (`f.doneAt` set): a 250 ms white flash over the card, a double shockwave ring in A and B colors, and a confetti burst (~60 particles, both brand colors) flying outward for ~1.2 s — then the fused logo cross-fade from Step 3.
+Keep particle state in the Renderer keyed by fuse id; reset it when the fuse id changes.
+
+- [ ] **Step 3c: Prominent "fused!" title**
+
+A DOM title for crisp typography: add `<div id="fused-title" hidden><strong></strong><span></span></div>` to `index.html`, styled top-center, large (≈ 40–56px bold, white with a soft shadow, a background pill using a CSS gradient from A's to B's color passed via CSS vars), with a slide-down + scale-in animation (`@keyframes`), auto-hiding after ~4.5 s with a fade. Text: `<strong>` = `"{A} × {B}"`, `<span>` = `"fused! · pull ↑ to open · ↓ to dismiss"`. Put the show/hide logic in `src/ui/fusedTitle.ts` (`showFusedTitle(el, a, b)`), called from main when a fuse result arrives (AI or placeholder). Respect reduced motion (no animation, still shown). Pointer-events none.
+
 - [ ] **Step 4: `src/main.ts`**
 - `const fuseClient = new AiFuseClient()` and keep a `const fallback = new PlaceholderFuseClient(0)`.
 - `const pending = new Map<number, AbortController>()`.
 - `onFuse: (a, b, fuseId)` → create an `AbortController`, store it, call `fuseClient.fuse(a, b, ctrl.signal)`:
-  - success → `scene?.setFuseResult(fuseId, result)`
+  - success → `scene?.setFuseResult(fuseId, result)` and `showFusedTitle(titleEl, a, b)`
   - `NoKeyError` → `showBanner('No OPENAI_API_KEY on the dev server — showing a placeholder fuse.', 6000)` once per session, then `fallback.fuse(a, b).then(r => scene?.setFuseResult(fuseId, r))`
   - `AbortError` → ignore
   - other errors → `console.error`, `showBanner(message, 6000)`, `scene?.setFuseError(fuseId)`
