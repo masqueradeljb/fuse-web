@@ -19,3 +19,6 @@ dist/
 .DS_Store
 .claude/settings.local.json
 *.log
+
+# copied from node_modules on install
+public/mediapipe-wasm/

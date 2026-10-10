@@ -1,0 +1,55 @@
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0b0b10;
+  color: #f4f4f6;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* the video is only a source for drawing; keep it rendered but invisible */
+#camera {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#stage { display: block; touch-action: none; }
+
+#banner {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: rgba(220, 60, 60, 0.9);
+  font-size: 14px;
+}
+
+#hint {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 16px;
+}
+
+#debug {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  font: 12px/1.5 ui-monospace, monospace;
+  pointer-events: none;
+}

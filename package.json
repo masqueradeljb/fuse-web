@@ -1,0 +1,23 @@
+{
+  "name": "fuse-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "postinstall": "node scripts/copy-mediapipe-wasm.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^1.1.0",
+    "simple-icons": "^16.34.0"
+  }
+}
