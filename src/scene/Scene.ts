@@ -21,6 +21,8 @@ export interface Held {
   from: ItemRef
   pos: Point
   target: Point
+  /** item position minus cursor position at grab time, so the logo does not jump */
+  grabOffset: Point
 }
 
 export interface Flight {
@@ -37,6 +39,8 @@ export interface Flight {
 export type FuseStatus = 'fusing' | 'done' | 'error'
 
 export interface FuseState {
+  /** unique per fuse attempt; results and errors are matched on it */
+  id: number
   siteA: string
   siteB: string
   status: FuseStatus
@@ -51,7 +55,7 @@ export interface SceneOptions {
   perShelf: number
   width: number
   height: number
-  onFuse: (a: Site, b: Site) => void
+  onFuse: (a: Site, b: Site, fuseId: number) => void
   config?: SceneConfig
 }
 
@@ -74,7 +78,8 @@ export class Scene {
 
   private readonly sitesById: Map<string, Site>
   private readonly config: SceneConfig
-  private readonly onFuse: (a: Site, b: Site) => void
+  private readonly onFuse: (a: Site, b: Site, fuseId: number) => void
+  private nextFuseId = 1
   private readonly perShelf: number
 
   constructor(opts: SceneOptions) {
@@ -112,7 +117,7 @@ export class Scene {
     const k = 1 - Math.exp(-dt * this.config.followStiffness)
     for (const h of this.held.values()) {
       const c = input.cursors.find((c) => c.handId === h.handId)
-      if (c) h.target = c.point
+      if (c) h.target = { x: c.point.x + h.grabOffset.x, y: c.point.y + h.grabOffset.y }
       h.pos = lerp(h.pos, h.target, k)
     }
 
@@ -154,7 +159,7 @@ export class Scene {
     const near = (c: Point, r: number) => dist(p, c) <= r * this.config.hoverFactor
     if (this.fuse) return !this.cardHold() && near(this.fuse.at, L.cardRadius) ? { kind: 'card' } : null
     for (const slot of SLOTS) {
-      if (!this.isSlotHeld(slot) && near(L.slots[slot], L.slotRadius)) return { kind: 'slot', slot }
+      if (!this.isSlotHidden(slot) && near(L.slots[slot], L.slotRadius)) return { kind: 'slot', slot }
     }
     for (const side of SIDES) {
       const index = L.shelf[side].findIndex((c) => near(c, L.shelfRadius))
@@ -163,17 +168,17 @@ export class Scene {
     return null
   }
 
-  setFuseResult(result: FuseResult): void {
+  setFuseResult(fuseId: number, result: FuseResult): void {
     const f = this.fuse
-    if (f && f.siteA === result.siteA && f.siteB === result.siteB) {
+    if (f && f.id === fuseId) {
       f.status = 'done'
       f.result = result
     }
   }
 
-  setFuseError(siteA: string, siteB: string): void {
+  setFuseError(fuseId: number): void {
     const f = this.fuse
-    if (f && f.siteA === siteA && f.siteB === siteB) f.status = 'error'
+    if (f && f.id === fuseId) f.status = 'error'
   }
 
   private cardHold(): Held | undefined {
@@ -212,7 +217,9 @@ export class Scene {
     if (!hit) return
     const siteId =
       hit.kind === 'shelf' ? this.shelves[hit.side][hit.index] : hit.kind === 'slot' ? this.slots[hit.slot] : null
-    this.held.set(e.handId, { handId: e.handId, siteId, from: hit, pos: { ...this.itemPos(hit) }, target: e.point })
+    const pos = { ...this.itemPos(hit) }
+    const grabOffset = { x: pos.x - e.point.x, y: pos.y - e.point.y }
+    this.held.set(e.handId, { handId: e.handId, siteId, from: hit, pos, target: { ...pos }, grabOffset })
   }
 
   private gripEnd(e: GripEvent): void {
@@ -269,8 +276,8 @@ export class Scene {
     this.held.clear()
     this.flights = this.flights.filter((f) => f.hideSlot === undefined)
     const [a, b] = this.slots
-    this.fuse = { siteA: a, siteB: b, status: 'fusing', startedAt: this.now, result: null, at: { ...at } }
-    this.onFuse(this.site(a), this.site(b))
+    this.fuse = { id: this.nextFuseId++, siteA: a, siteB: b, status: 'fusing', startedAt: this.now, result: null, at: { ...at } }
+    this.onFuse(this.site(a), this.site(b), this.fuse.id)
   }
 
   private dropCard(p: Point): void {
@@ -284,7 +291,8 @@ export class Scene {
     if (f.status === 'error') {
       f.status = 'fusing'
       f.startedAt = this.now
-      this.onFuse(this.site(f.siteA), this.site(f.siteB))
+      f.id = this.nextFuseId++
+      this.onFuse(this.site(f.siteA), this.site(f.siteB), f.id)
     }
   }
 

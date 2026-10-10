@@ -122,7 +122,7 @@ describe('Scene fuse', () => {
     expect(onFuse).not.toHaveBeenCalled()
     step([cur(1, 480, 300, true), cur(2, 520, 300, true)])
     expect(onFuse).toHaveBeenCalledTimes(1)
-    expect(onFuse.mock.calls[0].map((s: Site) => s.id)).toEqual(['s0', 's6'])
+    expect(onFuse.mock.calls[0].slice(0, 2).map((s: Site) => s.id)).toEqual(['s0', 's6'])
     expect(scene.fuse).toMatchObject({ siteA: 's0', siteB: 's6', status: 'fusing' })
     expect(scene.held.size).toBe(0)
   })
@@ -159,7 +159,7 @@ describe('Scene fuse', () => {
     step([cur(1, 700, 300)], [end(1, 700, 300)])
     step([])
     expect(scene.fuse?.at).toEqual({ x: 500, y: 300 })
-    scene.setFuseResult({ siteA: 's0', siteB: 's6', label: 'Site 0 × Site 6' })
+    scene.setFuseResult(scene.fuse!.id, { siteA: 's0', siteB: 's6', label: 'Site 0 × Site 6' })
     expect(scene.fuse?.status).toBe('done')
 
     step([cur(1, 500, 300, true)], [start(1, 500, 300)])
@@ -184,7 +184,7 @@ describe('Scene fuse', () => {
     step([cur(1, 300, 300, true)], [start(1, 300, 300)])
     step([cur(1, 700, 300)], [end(1, 700, 300)])
     step([])
-    scene.setFuseError('s0', 's6')
+    scene.setFuseError(scene.fuse!.id)
     expect(scene.fuse?.status).toBe('error')
     step([cur(1, 500, 300, true)], [start(1, 500, 300)])
     step([cur(1, 500, 300)], [end(1, 500, 300)])
@@ -194,7 +194,97 @@ describe('Scene fuse', () => {
 
   it('ignores a result for a pair that is no longer fusing', () => {
     const { scene } = setup()
-    scene.setFuseResult({ siteA: 's0', siteB: 's6', label: 'x' })
+    scene.setFuseResult(1, { siteA: 's0', siteB: 's6', label: 'x' })
     expect(scene.fuse).toBeNull()
+  })
+
+  it('passes the fuse id to onFuse', () => {
+    const { scene, onFuse, step } = setup()
+    step([cur(1, 300, 300, true)], [start(1, 300, 300)])
+    step([cur(1, 700, 300)], [end(1, 700, 300)])
+    expect(onFuse.mock.calls[0][2]).toBe(scene.fuse!.id)
+  })
+
+  it('ignores a stale result from a dismissed fuse of the same pair', () => {
+    const { scene, step } = setup()
+    step([cur(1, 300, 300, true)], [start(1, 300, 300)])
+    step([cur(1, 700, 300)], [end(1, 700, 300)])
+    const oldId = scene.fuse!.id
+    step([cur(1, 500, 300, true)], [start(1, 500, 300)])
+    step([cur(1, 50, 300)], [end(1, 50, 300)])
+    expect(scene.fuse).toBeNull()
+    step([cur(1, 300, 300, true)], [start(1, 300, 300)])
+    step([cur(1, 700, 300)], [end(1, 700, 300)])
+    expect(scene.fuse!.id).not.toBe(oldId)
+    scene.setFuseResult(oldId, { siteA: 's0', siteB: 's6', label: 'old' })
+    expect(scene.fuse?.status).toBe('fusing')
+    scene.setFuseError(oldId)
+    expect(scene.fuse?.status).toBe('fusing')
+  })
+
+  it('a retry gets a new id and ignores errors for the old one', () => {
+    const { scene, onFuse, step } = setup()
+    step([cur(1, 300, 300, true)], [start(1, 300, 300)])
+    step([cur(1, 700, 300)], [end(1, 700, 300)])
+    step([])
+    const oldId = scene.fuse!.id
+    scene.setFuseError(oldId)
+    step([cur(1, 500, 300, true)], [start(1, 500, 300)])
+    step([cur(1, 500, 300)], [end(1, 500, 300)])
+    expect(scene.fuse!.id).not.toBe(oldId)
+    expect(onFuse.mock.calls[1][2]).toBe(scene.fuse!.id)
+    scene.setFuseError(oldId)
+    expect(scene.fuse?.status).toBe('fusing')
+  })
+})
+
+describe('Scene grab offset and flights', () => {
+  it('keeps the grab offset instead of jumping to the cursor', () => {
+    const { scene, step } = setup()
+    step([cur(1, 340, 320, true)], [start(1, 340, 320)])
+    expect(scene.held.get(1)?.pos).toEqual({ x: 300, y: 300 })
+    step([cur(1, 440, 420, true)])
+    expect(scene.held.get(1)?.pos).toEqual({ x: 400, y: 400 })
+  })
+
+  it('does not fuse on a 4:3 window when gripping the inner edges', () => {
+    const onFuse = vi.fn()
+    const scene = new Scene({
+      sites: SITES,
+      perShelf: 6,
+      width: 1024,
+      height: 768,
+      onFuse,
+      config: { ...sceneConfig, followStiffness: 1e6 },
+    })
+    let t = 1000
+    const step = (cursors: HandCursor[], events: GripEvent[] = []) => {
+      t += 16
+      scene.update(t, { cursors, events })
+    }
+    scene.update(t, { cursors: [], events: [] })
+    const { slots, slotRadius } = scene.layout
+    const y = slots[0].y
+    const a = { x: slots[0].x + 1.25 * slotRadius, y }
+    const b = { x: slots[1].x - 1.25 * slotRadius, y }
+    step([cur(1, a.x, a.y, true), cur(2, b.x, b.y, true)], [start(1, a.x, a.y), start(2, b.x, b.y)])
+    expect(scene.held.size).toBe(2)
+    for (let i = 0; i < 5; i++) step([cur(1, a.x, a.y, true), cur(2, b.x, b.y, true)])
+    expect(onFuse).not.toHaveBeenCalled()
+    const mid = scene.layout.center.x
+    // grabbed at the inner edges, the logos touch before the cursors meet
+    step([cur(1, mid + 10, y, true), cur(2, mid - 10, y, true)])
+    expect(onFuse).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not offer a slot whose logo is still flying in', () => {
+    const { scene, step } = setup()
+    step([cur(1, 300, 300, true)], [start(1, 300, 300)])
+    step([cur(1, 450, 150)], [end(1, 450, 150)])
+    step([cur(2, 300, 300, true)], [start(2, 300, 300)])
+    expect(scene.held.size).toBe(0)
+    for (let i = 0; i < 20; i++) step([])
+    step([cur(2, 300, 300, true)], [start(2, 300, 300)])
+    expect(scene.held.size).toBe(1)
   })
 })
