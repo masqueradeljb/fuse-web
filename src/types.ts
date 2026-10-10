@@ -42,4 +42,6 @@ export interface Site {
   iconPath?: string
   /** your sites: same-origin logo image URL from /api/logo */
   logoUrl?: string
+  /** background behind a fetched logo; default white */
+  logoBg?: string
 }

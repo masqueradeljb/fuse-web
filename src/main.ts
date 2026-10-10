@@ -1,6 +1,6 @@
 import './style.css'
 import { gripConfig } from './config'
-import { PER_SHELF, SITES } from './data/sites'
+import { REFERENCE_SITES, SHELF_ROWS } from './data/sites'
 import { DebugPanel } from './debug/DebugPanel'
 import { PlaceholderFuseClient } from './fuse/FuseClient'
 import { GestureEngine } from './gesture/GestureEngine'
@@ -8,37 +8,32 @@ import { MouseHand } from './input/MouseHand'
 import { Renderer } from './render/Renderer'
 import { Scene } from './scene/Scene'
 import { HandTracker } from './tracking/HandTracker'
-import type { InputFrame, TrackedHand } from './types'
+import { bindSiteForm } from './ui/siteForm'
+import { bindOverlayClose, openFused } from './ui/fusedView'
+import type { InputFrame, Site, TrackedHand } from './types'
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!
 const video = document.querySelector<HTMLVideoElement>('#camera')!
 const banner = document.querySelector<HTMLElement>('#banner')!
 const hint = document.querySelector<HTMLElement>('#hint')!
 
+const start = document.querySelector<HTMLElement>('#start')!
+const startForm = document.querySelector<HTMLFormElement>('#start-form')!
+const startStatus = document.querySelector<HTMLElement>('#start-status')!
+const addForm = document.querySelector<HTMLFormElement>('#add-site')!
+const addStatus = document.querySelector<HTMLElement>('#add-status')!
+const overlay = document.querySelector<HTMLElement>('#fused-overlay')!
+
 const fuseClient = new PlaceholderFuseClient()
-const scene = new Scene({
-  sites: SITES,
-  perShelf: PER_SHELF,
-  width: innerWidth,
-  height: innerHeight,
-  onFuse: (a, b, fuseId) => {
-    fuseClient.fuse(a, b).then(
-      (result) => scene.setFuseResult(fuseId, result),
-      (err) => {
-        console.error('fuse failed', err)
-        scene.setFuseError(fuseId)
-      },
-    )
-  },
-})
-const renderer = new Renderer(canvas, SITES)
+let scene: Scene | null = null
+const renderer = new Renderer(canvas, REFERENCE_SITES)
 const engine = new GestureEngine(gripConfig)
 const mouse = new MouseHand(canvas)
 const debug = new DebugPanel(document.querySelector<HTMLElement>('#debug')!, gripConfig)
 
 function resize() {
   renderer.resize(innerWidth, innerHeight)
-  scene.resize(innerWidth, innerHeight)
+  scene?.resize(innerWidth, innerHeight)
 }
 addEventListener('resize', resize)
 resize()
@@ -68,10 +63,47 @@ async function startCamera() {
   }
 }
 
-function showBanner(text: string) {
+let bannerTimer: ReturnType<typeof setTimeout> | undefined
+function showBanner(text: string, hideAfterMs?: number) {
+  clearTimeout(bannerTimer)
   banner.textContent = text
   banner.hidden = false
+  if (hideAfterMs) bannerTimer = setTimeout(() => (banner.hidden = true), hideAfterMs)
 }
+
+function startStage(site: Site) {
+  start.hidden = true
+  addForm.hidden = false
+  renderer.addSite(site)
+  scene = new Scene({
+    leftSites: [site],
+    rightSites: REFERENCE_SITES,
+    rows: SHELF_ROWS,
+    width: innerWidth,
+    height: innerHeight,
+    onFuse: (a, b, fuseId) => {
+      fuseClient.fuse(a, b).then(
+        (result) => scene?.setFuseResult(fuseId, result),
+        (err) => {
+          console.error('fuse failed', err)
+          scene?.setFuseError(fuseId)
+        },
+      )
+    },
+    onOpenFused: (a, b) =>
+      openFused(a, b, overlay, () =>
+        showBanner('Pop-up blocked — showing it here. Allow pop-ups for this site to open fused pages in a new tab.', 6000),
+      ),
+  })
+  void startCamera()
+}
+
+bindSiteForm(startForm, startStatus, (site) => startStage(site))
+bindSiteForm(addForm, addStatus, (site) => {
+  renderer.addSite(site)
+  scene?.addLeftSite(site)
+})
+bindOverlayClose(overlay)
 
 let hands: TrackedHand[] = []
 let handFrame: InputFrame = { cursors: [], events: [] }
@@ -79,6 +111,7 @@ let lastErrorLog = 0
 
 function frame(now: number) {
   requestAnimationFrame(frame)
+  if (!scene) return
   try {
     const fresh = tracker?.detect(video, now, innerWidth, innerHeight)
     let handEvents: InputFrame['events'] = []
@@ -109,5 +142,4 @@ function frame(now: number) {
   }
 }
 
-void startCamera()
 requestAnimationFrame(frame)

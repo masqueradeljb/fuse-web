@@ -11,6 +11,23 @@
     <div id="banner" hidden></div>
     <div id="hint" hidden>Show both hands — pinch or make a fist to grab</div>
     <pre id="debug" hidden></pre>
+    <section id="start">
+      <h1>fuse-web</h1>
+      <p>Enter your site. We'll grab its logo so you can fuse it with famous sites — with your hands.</p>
+      <form id="start-form" autocomplete="off">
+        <input name="site" placeholder="yoursite.com" spellcheck="false" autofocus />
+        <button type="submit">Start</button>
+      </form>
+      <p id="start-status" class="status"></p>
+    </section>
+    <form id="add-site" autocomplete="off" hidden>
+      <input name="site" placeholder="+ add your site" spellcheck="false" />
+      <span id="add-status" class="status"></span>
+    </form>
+    <div id="fused-overlay" hidden>
+      <iframe title="Fused site"></iframe>
+      <button type="button" aria-label="Close">×</button>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

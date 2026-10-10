@@ -28,3 +28,15 @@ export function dominantColor(rgba: Uint8ClampedArray, fallback = '#888888'): st
   const hex = (v: number) => Math.round(v / weight).toString(16).padStart(2, '0')
   return `#${hex(r)}${hex(g)}${hex(b)}`
 }
+
+/** True when at least `ratio` of the opaque pixels are near-white (min channel > 235). */
+export function isMostlyWhite(rgba: Uint8ClampedArray, ratio = 0.6): boolean {
+  let opaque = 0
+  let white = 0
+  for (let i = 0; i + 3 < rgba.length; i += 4) {
+    if (rgba[i + 3] < 128) continue
+    opaque++
+    if (Math.min(rgba[i], rgba[i + 1], rgba[i + 2]) > 235) white++
+  }
+  return opaque > 0 && white / opaque >= ratio
+}

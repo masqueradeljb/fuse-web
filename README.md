@@ -19,11 +19,22 @@ npm run dev
 `npm install` also copies MediaPipe's wasm runtime and downloads the hand-landmark model
 (~7.5 MB) into `public/` (both git-ignored), so the app works offline afterwards.
 
-Open http://localhost:5173 and allow camera access. Everything runs locally in the
+Open http://localhost:5173, enter your site on the start page, and allow camera access. Everything runs locally in the
 browser; no API keys are needed for Phase 1.
 
 If the camera prompt doesn't appear on macOS, allow your browser under System Settings →
 Privacy & Security → Camera, then reload.
+
+## Your site vs. reference sites
+
+- On the start page, enter your site. Its logo is fetched by the dev server (`/api/logo`)
+  and appears on the left. `+ add your site` (top-left) adds more.
+- The right side holds 12 reference sites. Your logos go in the left slot, reference logos
+  in the right.
+- Result card: pull it **up** to open the fused page (a new tab; if pop-ups are blocked it
+  opens in-app, so allow pop-ups for the site to get tabs), pull it **down** to dismiss.
+- `/api/logo` fetches public pages from your machine; it only runs in `npm run dev` /
+  `npm run preview`.
 
 ## Controls
 
@@ -33,7 +44,8 @@ Privacy & Security → Camera, then reload.
 | Drop a shelf logo on a center slot | Swap it in |
 | One logo per hand, bring hands together | Fuse |
 | Drag one center logo onto the other | Fuse (one hand / mouse) |
-| Pull the result card to the left or right edge | Dismiss |
+| Pull the result card up | Open the fused page |
+| Pull the result card down | Dismiss |
 
 Mouse works as a single hand. Press `D` for the debug panel (`[` `]` pinch threshold,
 `-` `=` fist threshold, `R` record landmarks to JSON).

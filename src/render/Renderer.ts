@@ -76,7 +76,7 @@ export class Renderer {
       ctx.shadowBlur = r * 0.8
     }
     // your sites: full-color logo on white; reference sites: white/black glyph on brand color
-    ctx.fillStyle = site.logoUrl ? '#ffffff' : site.color
+    ctx.fillStyle = site.logoUrl ? (site.logoBg ?? '#ffffff') : site.color
     ctx.beginPath()
     ctx.arc(p.x, p.y, r, 0, Math.PI * 2)
     ctx.fill()

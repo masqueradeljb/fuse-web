@@ -14,6 +14,7 @@ export class DebugPanel {
     private config: GripConfig,
   ) {
     window.addEventListener('keydown', (e) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return
       this.onKey(e.key)
     })
