@@ -124,6 +124,56 @@ filled with the first site of each shelf.
 A card with both logos overlapped, a split two-color background from each site's brand
 color, and the label "Spotify × Airbnb". Proves the whole loop without any backend.
 
+## Phase 1.5 — your site vs. reference sites
+
+Added after the first live test (2026-10-10).
+
+### Flow
+
+1. **Start page:** one input ("yoursite.com"). On submit the dev server fetches the site's
+   logo (below); the stage opens with that logo in the **left slot**. The camera starts here,
+   not on page load.
+2. **Stage:**
+   - **Left shelf = your sites**, newest first, up to 6. A small `+ site` box (top-left)
+     adds another; the newest goes into the left slot. Re-adding an existing site moves it
+     to the front.
+   - **Right shelf = the 12 reference sites**, in 2 columns × 6 rows. The right slot starts
+     with the first one.
+   - Left-shelf logos only drop into the left slot; right-shelf logos only into the right
+     slot. A fuse is always *your site × a reference site*.
+3. **Result card zones** (replace left/right-edge dismissal, which clashed with the shelves):
+   - While the card is held, entering the **bottom 15%** of the screen dismisses it at once
+     (no release needed — hands often leave the camera view at the edges).
+   - Entering the **top 15%** with a finished card opens the fused page and releases the card,
+     which glides back to the center.
+   - Zone hints ("↑ open fused site", "↓ dismiss") show while the card is held.
+4. **Fused page:** `fused.html?pair=<a>__<b>` — a placeholder (split brand colors, both
+   logos, "A × B", "coming in Phase 3"). Pair data is handed over via `localStorage`.
+   Opened with `window.open`; a hand gesture isn't a user activation, so Chrome may block
+   it — then the same page shows in a full-screen in-app overlay (close with × or Esc) and a
+   banner suggests allowing pop-ups for the site.
+
+### Logo fetching — `/api/logo?url=` (Vite dev-server middleware)
+
+Lightweight on purpose; no headless browser.
+
+- Normalize input (`yoursite.com` → `https://yoursite.com`); only http(s); refuse
+  loopback/private/link-local hosts (a rough guard — this is a local demo, not a hosted
+  service).
+- Fetch the page HTML (6 s timeout, browser-like UA), parse `<link>`/`<meta>` in `<head>`.
+- Candidates, best first: apple-touch-icon (largest) → SVG icon → largest sized icon →
+  other icons → Google's favicon service (`s2/favicons?sz=256`). Mask icons are skipped.
+- Fetch candidates in order; the first `image/*` response under 2 MB wins. Cached in memory
+  and served same-origin at `/api/logo/img?id=<site id>`, so the browser can read its pixels.
+- Name: `og:site_name` → first segment of `<title>` → hostname.
+- Response: `{ id, name, url, logoUrl }`. The browser samples the logo's dominant color
+  (saturation-weighted average of opaque pixels) for the card's half.
+- User logos render as the full-color image on a white circle; reference logos keep the
+  simple-icons glyph on brand color.
+
+Phase 2 reuses this route for the logo; the heavier Playwright inspection below is only
+needed for Phase 3's style capture.
+
 ## Site inspection (shared by Phases 2 and 3)
 
 One endpoint, one small function — deliberately light. If a site can't be fully read, we
