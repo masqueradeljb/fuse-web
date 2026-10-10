@@ -296,6 +296,33 @@ cancels both jobs. The page links the fused logo by its deterministic URL (same 
   status, and switches to the page when ready. If the server doesn't know the job (e.g.
   restarted), it starts it from the stored pair.
 
+### Phase 3b refinements (after live test, 2026-10-10)
+
+**Collision fuse.** Two held logos no longer fuse on proximity. When they touch they
+collide: they can't overlap (they press at a contact point), and the push depth (how far
+the hands drive past contact) charges a ring; full charge (~0.5–1 s of real pushing) →
+screen shake → burst → fuse. Easing off drains the charge. Visuals: squash along the push
+axis, jitter ∝ charge, sparks at the seam, charge ring in A→B colors. The one-hand
+drop-onto fuse stays instant (mouse fallback).
+
+**Angle transfer.** Roles sharpen: **left = the product** (what it is, who it's for, facts,
+logo); **right = style + page structure + hero format + marketing angle**. The model first
+names the reference's positioning angle (e.g. Uber: "economic opportunity for drivers")
+and rewrites it for the left product's audience ("…for builders").
+
+**Richer capture.** Hero section (eyebrow, headline, subhead, CTA, media type and URL:
+video src + poster / image / CSS background), meta description, og:image, up to 10
+images, up to 8 sections with longer text.
+
+**Hero media.** In parallel with the page, gpt-image-2.5 generates an on-angle hero
+image: the reference hero (poster / image / og:image / screenshot) as composition and
+mood reference, about the left product's audience; no text or logos. Served at
+`/api/fuse-site/hero?id=` (falls back to a redirect to the reference image if generation
+fails). If the reference hero has a usable video URL (http(s), not `blob:`), the page
+embeds it muted/looping behind a tint, with the generated image as the main visual.
+The job is `ready` only when both page and hero have settled. Page CSP adds
+`media-src https:`.
+
 ## Secrets and public-repo hygiene
 
 This repo is public (used at a builder event). Nothing sensitive is committed.
