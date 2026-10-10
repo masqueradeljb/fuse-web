@@ -113,3 +113,88 @@ describe('Scene basics', () => {
     expect(scene.isSlotHidden(0)).toBe(false)
   })
 })
+
+describe('Scene fuse', () => {
+  it('two hands holding the slot logos fuse when brought together', () => {
+    const { scene, onFuse, step } = setup()
+    step([cur(1, 300, 300, true), cur(2, 700, 300, true)], [start(1, 300, 300), start(2, 700, 300)])
+    expect(scene.held.size).toBe(2)
+    expect(onFuse).not.toHaveBeenCalled()
+    step([cur(1, 480, 300, true), cur(2, 520, 300, true)])
+    expect(onFuse).toHaveBeenCalledTimes(1)
+    expect(onFuse.mock.calls[0].map((s: Site) => s.id)).toEqual(['s0', 's6'])
+    expect(scene.fuse).toMatchObject({ siteA: 's0', siteB: 's6', status: 'fusing' })
+    expect(scene.held.size).toBe(0)
+  })
+
+  it('two held logos far apart do not fuse', () => {
+    const { scene, onFuse, step } = setup()
+    step([cur(1, 300, 300, true), cur(2, 700, 300, true)], [start(1, 300, 300), start(2, 700, 300)])
+    step([cur(1, 350, 200, true), cur(2, 650, 400, true)])
+    expect(onFuse).not.toHaveBeenCalled()
+    expect(scene.fuse).toBeNull()
+  })
+
+  it('one hand: dropping a slot logo onto the other slot fuses', () => {
+    const { scene, onFuse, step } = setup()
+    step([cur(1, 300, 300, true)], [start(1, 300, 300)])
+    step([cur(1, 700, 300, true)])
+    step([cur(1, 700, 300)], [end(1, 700, 300)])
+    expect(onFuse).toHaveBeenCalledTimes(1)
+    expect(scene.fuse?.status).toBe('fusing')
+  })
+
+  it('ignores slots and shelves during a fuse', () => {
+    const { scene, step } = setup()
+    step([cur(1, 300, 300, true)], [start(1, 300, 300)])
+    step([cur(1, 700, 300)], [end(1, 700, 300)])
+    step([cur(1, 300, 300, true)], [start(1, 300, 300)])
+    step([cur(2, 48, row(2), true)], [start(2, 48, row(2))])
+    expect(scene.held.size).toBe(0)
+  })
+
+  it('the card glides to center, shows the result, and is dismissed at an edge', () => {
+    const { scene, step } = setup()
+    step([cur(1, 300, 300, true)], [start(1, 300, 300)])
+    step([cur(1, 700, 300)], [end(1, 700, 300)])
+    step([])
+    expect(scene.fuse?.at).toEqual({ x: 500, y: 300 })
+    scene.setFuseResult({ siteA: 's0', siteB: 's6', label: 'Site 0 × Site 6' })
+    expect(scene.fuse?.status).toBe('done')
+
+    step([cur(1, 500, 300, true)], [start(1, 500, 300)])
+    expect(scene.held.get(1)?.from).toEqual({ kind: 'card' })
+    step([cur(1, 50, 300, true)])
+    step([cur(1, 50, 300)], [end(1, 50, 300)])
+    expect(scene.fuse).toBeNull()
+    expect(scene.slots).toEqual(['s0', 's6'])
+  })
+
+  it('a card dropped near the middle stays', () => {
+    const { scene, step } = setup()
+    step([cur(1, 300, 300, true)], [start(1, 300, 300)])
+    step([cur(1, 700, 300)], [end(1, 700, 300)])
+    step([cur(1, 500, 300, true)], [start(1, 500, 300)])
+    step([cur(1, 450, 350)], [end(1, 450, 350)])
+    expect(scene.fuse).not.toBeNull()
+  })
+
+  it('a failed fuse retries when the card is gripped and released', () => {
+    const { scene, onFuse, step } = setup()
+    step([cur(1, 300, 300, true)], [start(1, 300, 300)])
+    step([cur(1, 700, 300)], [end(1, 700, 300)])
+    step([])
+    scene.setFuseError('s0', 's6')
+    expect(scene.fuse?.status).toBe('error')
+    step([cur(1, 500, 300, true)], [start(1, 500, 300)])
+    step([cur(1, 500, 300)], [end(1, 500, 300)])
+    expect(onFuse).toHaveBeenCalledTimes(2)
+    expect(scene.fuse?.status).toBe('fusing')
+  })
+
+  it('ignores a result for a pair that is no longer fusing', () => {
+    const { scene } = setup()
+    scene.setFuseResult({ siteA: 's0', siteB: 's6', label: 'x' })
+    expect(scene.fuse).toBeNull()
+  })
+})
