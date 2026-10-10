@@ -21,7 +21,7 @@
 ```
 server/pair.ts                 pairId(aId, bId) — shared by fuse-logo and fuse-site
 server/fuse/handler.ts         import pairId from ../pair (no behavior change)
-server/fuse/options.ts         + pageModel, pageEffort, maxPages
+server/fuse/options.ts         + geminiApiKey, pageModel, pageThinking, maxPages
 server/site/types.ts           SiteCapture
 server/site/inspectPage.ts     INSPECT_PAGE_JS (plain JS string run in the page)
 server/site/capture.ts         createCapturer(cacheDir) — Playwright, cache, dedupe
