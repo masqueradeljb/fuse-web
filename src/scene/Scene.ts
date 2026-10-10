@@ -65,8 +65,8 @@ export interface SceneOptions {
   config?: SceneConfig
 }
 
-/** each shelf feeds one center slot: your sites -> left, reference sites -> right */
-const SLOT_OF: Record<Side, 0 | 1> = { left: 0, right: 1 }
+/** a slot's fallback shelf when its site has left every shelf */
+const SIDE_OF: Record<0 | 1, Side> = { 0: 'left', 1: 'right' }
 
 const SLOTS = [0, 1] as const
 /** after opening the fused page, the top zone is ignored this long */
@@ -128,8 +128,8 @@ export class Scene {
     this.sitesById.set(site.id, site)
     const left = [site.id, ...this.shelves.left.filter((id) => id !== site.id)]
     if (!this.isSlotHeld(0)) this.slots[0] = site.id
-    // keep at most `rows`, never dropping the site that's in the left slot
-    const keep = new Set<string>([this.slots[0]])
+    // keep at most `rows`, never dropping a site that's in a slot or held
+    const keep = new Set<string>(this.slots)
     for (const h of this.held.values()) if (h.siteId) keep.add(h.siteId)
     for (let i = left.length - 1; left.length > this.rows && i >= 0; i--) {
       if (!keep.has(left[i])) left.splice(i, 1)
@@ -307,10 +307,11 @@ export class Scene {
     const target = this.slotAt(e.point)
 
     if (h.from.kind === 'shelf') {
-      const slot = SLOT_OF[h.from.side]
-      if (target === slot && !this.isSlotHeld(slot)) {
+      // any shelf logo may go in either slot, as long as the two slots stay different sites
+      const slot = target
+      if (slot !== null && !this.isSlotHeld(slot) && this.slots[slot === 0 ? 1 : 0] !== siteId) {
         const replaced = this.slots[slot]
-        if (replaced !== siteId) this.fly(replaced, L.slots[slot], this.shelfPosOf(replaced, h.from.side), L.slotRadius, L.shelfRadius)
+        if (replaced !== siteId) this.fly(replaced, L.slots[slot], this.shelfPosOf(replaced, SIDE_OF[slot]), L.slotRadius, L.shelfRadius)
         this.slots[slot] = siteId
         this.fly(siteId, h.pos, L.slots[slot], r, L.slotRadius, slot)
       } else {

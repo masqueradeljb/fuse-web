@@ -28,8 +28,8 @@ Privacy & Security → Camera, then reload.
 
 - On the start page, enter your site. Its logo is fetched by the dev server (`/api/logo`)
   and appears on the left. `+ add your site` (top-left) adds more.
-- The right side holds 12 reference sites. Your logos go in the left slot, reference logos
-  in the right.
+- The right side holds 12 reference sites. Any logo can go in either center slot, so you
+  can fuse your site with a reference site or two of your own sites.
 - Result card: pull it **up** to open the fused page (a new tab; if pop-ups are blocked it
   opens in-app, so allow pop-ups for the site to get tabs), pull it **down** to dismiss.
 - `/api/logo` fetches public pages from your machine; it only runs in `npm run dev` /

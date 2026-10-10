@@ -139,8 +139,9 @@ Added after the first live test (2026-10-10).
      to the front.
    - **Right shelf = the 12 reference sites**, in 2 columns × 6 rows. The right slot starts
      with the first one.
-   - Left-shelf logos only drop into the left slot; right-shelf logos only into the right
-     slot. A fuse is always *your site × a reference site*.
+   - Any shelf logo can drop into either slot (the two slots must hold different sites), so
+     two of your own sites can be fused too. *(Relaxed from side-locked slots after the
+     live test.)*
 3. **Result card zones** (replace left/right-edge dismissal, which clashed with the shelves):
    - While the card is held, entering the **bottom 15%** of the screen dismisses it at once
      (no release needed — hands often leave the camera view at the edges).

@@ -100,17 +100,24 @@ describe('Scene basics', () => {
     expect(scene.flights).toEqual([expect.objectContaining({ siteId: 's2', to: { x: 48, y: row(2) } })])
   })
 
-  it('your logos only go in the left slot', () => {
+  it('your logos can go in the right slot too, so two of your sites can fuse', () => {
     const { scene, step } = setup()
     step([cur(1, 48, row(2), true)], [start(1, 48, row(2))])
     step([cur(1, 700, 300)], [end(1, 700, 300)])
-    expect(scene.slots).toEqual(['s0', 's6'])
-    expect(scene.flights).toEqual([expect.objectContaining({ siteId: 's2', to: { x: 48, y: row(2) } })])
+    expect(scene.slots).toEqual(['s0', 's2'])
+    expect(scene.flights).toContainEqual(expect.objectContaining({ siteId: 's6', to: { x: 952, y: row(0) } }))
   })
 
-  it('reference logos only go in the right slot', () => {
+  it('reference logos can go in the left slot too', () => {
     const { scene, step } = setup()
     step([cur(1, 952, row(2), true)], [start(1, 952, row(2))])
+    step([cur(1, 300, 300)], [end(1, 300, 300)])
+    expect(scene.slots).toEqual(['s8', 's6'])
+  })
+
+  it('refuses to put the same site in both slots', () => {
+    const { scene, step } = setup()
+    step([cur(1, 952, row(0), true)], [start(1, 952, row(0))])
     step([cur(1, 300, 300)], [end(1, 300, 300)])
     expect(scene.slots).toEqual(['s0', 's6'])
   })
