@@ -21,6 +21,8 @@ npm run dev
 Open http://localhost:5173, enter your site on the start page, and allow camera access. Everything runs locally in the
 browser; without an OpenAI key the fuse falls back to a placeholder.
 
+Site fusion needs Chromium for Playwright: `npx playwright install chromium` (one time).
+
 If the camera prompt doesn't appear on macOS, allow your browser under System Settings →
 Privacy & Security → Camera, then reload.
 

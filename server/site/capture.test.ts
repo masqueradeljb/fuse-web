@@ -1,0 +1,32 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterAll, describe, expect, it } from 'vitest'
+import { createCapturer } from './capture'
+
+const FIXTURE = `<!doctype html><html><head><title>Acme | Rockets</title>
+<style>body{background:#101820;color:#f2f2f2;font-family:Georgia,serif}h1{font-family:Impact,sans-serif;font-size:64px}
+.btn{background:#ff5500;color:#fff;border-radius:12px;padding:14px 22px;display:inline-block}</style></head>
+<body><header><nav><a href="/">Home</a><a href="/pricing">Pricing</a></nav></header>
+<main><h1>Rockets for everyone</h1><p>Launch in minutes.</p><a class="btn" href="/start">Get started</a>
+<h2>Fast</h2><p>Really fast.</p><h2>Safe</h2><p>Very safe.</p></main></body></html>`
+
+const dir = mkdtempSync(join(tmpdir(), 'cap-'))
+const capturer = createCapturer(dir)
+afterAll(async () => {
+  await capturer.close()
+  rmSync(dir, { recursive: true, force: true })
+})
+
+describe('capturer', () => {
+  it('extracts style tokens and content from a page', async () => {
+    const cap = await capturer.captureHtml('https://acme.test/', FIXTURE)
+    expect(cap.tokens.background).toBe('rgb(16, 24, 32)')
+    expect(cap.tokens.headingFont).toMatch(/Impact/)
+    expect(cap.tokens.button.background).toBe('rgb(255, 85, 0)')
+    expect(cap.content.headline).toBe('Rockets for everyone')
+    expect(cap.content.subhead).toBe('Launch in minutes.')
+    expect(cap.content.ctas).toContain('Get started')
+    expect(cap.content.sections.map((s) => s.heading)).toEqual(['Fast', 'Safe'])
+  }, 30_000)
+})
