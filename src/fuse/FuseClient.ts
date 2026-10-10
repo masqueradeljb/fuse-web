@@ -11,14 +11,14 @@ export interface FuseResult {
 }
 
 export interface FuseClient {
-  fuse(a: Site, b: Site): Promise<FuseResult>
+  fuse(a: Site, b: Site, signal?: AbortSignal): Promise<FuseResult>
 }
 
 /** Phase 1 stand-in: no backend, just a short "thinking" delay. */
 export class PlaceholderFuseClient implements FuseClient {
   constructor(private delayMs = 1200) {}
 
-  async fuse(a: Site, b: Site): Promise<FuseResult> {
+  async fuse(a: Site, b: Site, _signal?: AbortSignal): Promise<FuseResult> {
     await new Promise((resolve) => setTimeout(resolve, this.delayMs))
     return { siteA: a.id, siteB: b.id, label: `${a.name} × ${b.name}` }
   }

@@ -46,6 +46,8 @@ export interface FuseState {
   status: FuseStatus
   startedAt: number
   result: FuseResult | null
+  /** scene time when the result arrived */
+  doneAt?: number
   /** current card position */
   at: Point
 }
@@ -61,7 +63,9 @@ export interface SceneOptions {
   height: number
   onFuse: (a: Site, b: Site, fuseId: number) => void
   /** a finished card was pulled into the top zone */
-  onOpenFused: (a: Site, b: Site) => void
+  onOpenFused: (a: Site, b: Site, result: FuseResult | null) => void
+  /** the card was dismissed; cancel its in-flight request */
+  onFuseDismissed?: (fuseId: number) => void
   config?: SceneConfig
 }
 
@@ -90,7 +94,8 @@ export class Scene {
   private readonly sitesById = new Map<string, Site>()
   private readonly config: SceneConfig
   private readonly onFuse: (a: Site, b: Site, fuseId: number) => void
-  private readonly onOpenFused: (a: Site, b: Site) => void
+  private readonly onOpenFused: (a: Site, b: Site, result: FuseResult | null) => void
+  private readonly onFuseDismissed?: (fuseId: number) => void
   private readonly rows: number
   private width: number
   private height: number
@@ -103,6 +108,7 @@ export class Scene {
     this.rows = opts.rows
     this.onFuse = opts.onFuse
     this.onOpenFused = opts.onOpenFused
+    this.onFuseDismissed = opts.onFuseDismissed
     for (const s of [...opts.leftSites, ...opts.rightSites]) this.sitesById.set(s.id, s)
     this.shelves = { left: opts.leftSites.slice(0, opts.rows).map((s) => s.id), right: opts.rightSites.map((s) => s.id) }
     this.slots = [this.shelves.left[0], this.shelves.right[0]]
@@ -226,6 +232,7 @@ export class Scene {
     if (f && f.id === fuseId) {
       f.status = 'done'
       f.result = result
+      f.doneAt = this.now
     }
   }
 
@@ -242,11 +249,12 @@ export class Scene {
     if (handY > bottom) {
       this.held.delete(card.handId)
       this.fuse = null
+      this.onFuseDismissed?.(f.id)
     } else if (handY < top && f.status === 'done' && this.now >= this.openCooldownUntil) {
       // let go so it glides back; the hand must release and grip again to re-open
       this.held.delete(card.handId)
       this.openCooldownUntil = this.now + OPEN_COOLDOWN_MS
-      this.onOpenFused(this.site(f.siteA), this.site(f.siteB))
+      this.onOpenFused(this.site(f.siteA), this.site(f.siteB), f.result)
     }
   }
 

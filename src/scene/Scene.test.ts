@@ -23,6 +23,7 @@ const end = (handId: number, x: number, y: number): GripEvent => ({ type: 'gripE
 function setup() {
   const onFuse = vi.fn()
   const onOpenFused = vi.fn()
+  const onFuseDismissed = vi.fn()
   // huge stiffness: held logos snap to the cursor each step, so tests don't wait on springs
   const scene = new Scene({
     leftSites: SITES.slice(0, 6),
@@ -32,6 +33,7 @@ function setup() {
     height: 600,
     onFuse,
     onOpenFused,
+    onFuseDismissed,
     config: { ...sceneConfig, followStiffness: 1e6 },
   })
   let t = 1000
@@ -40,7 +42,7 @@ function setup() {
     t += 16
     scene.update(t, { cursors, events })
   }
-  return { scene, onFuse, onOpenFused, step }
+  return { scene, onFuse, onOpenFused, onFuseDismissed, step }
 }
 
 describe('Scene basics', () => {
@@ -212,7 +214,7 @@ describe('Scene fuse', () => {
     step([cur(1, 500, 300, true)], [start(1, 500, 300)])
     step([cur(1, 500, 40, true)])
     expect(onOpenFused).toHaveBeenCalledTimes(1)
-    expect(onOpenFused.mock.calls[0].map((s: Site) => s.id)).toEqual(['s0', 's6'])
+    expect(onOpenFused.mock.calls[0].slice(0, 2).map((s: Site) => s.id)).toEqual(['s0', 's6'])
     expect(scene.held.size).toBe(0)
     step([cur(1, 500, 40, true)])
     expect(onOpenFused).toHaveBeenCalledTimes(1)
@@ -453,5 +455,27 @@ describe('Scene: your sites', () => {
     for (let i = 0; i < 7; i++) scene.addLeftSite(site(`m${i}.com`))
     step([cur(1, 48, row(1), true)], [start(1, 48, row(1))])
     expect(() => step([cur(1, 300, 300)], [end(1, 300, 300)])).not.toThrow()
+  })
+
+  it('reports the dismissed fuse id so the request can be cancelled', () => {
+    const { scene, onFuseDismissed, step } = setup()
+    step([cur(1, 300, 300, true)], [start(1, 300, 300)])
+    step([cur(1, 700, 300)], [end(1, 700, 300)])
+    const id = scene.fuse!.id
+    step([cur(1, 500, 300, true)], [start(1, 500, 300)])
+    step([cur(1, 500, 580, true)])
+    expect(onFuseDismissed).toHaveBeenCalledWith(id)
+  })
+
+  it('records when the result arrived and passes it to onOpenFused', () => {
+    const { scene, onOpenFused, step } = setup()
+    step([cur(1, 300, 300, true)], [start(1, 300, 300)])
+    step([cur(1, 700, 300)], [end(1, 700, 300)])
+    const result = { siteA: 's0', siteB: 's6', label: 'x', logoUrl: '/api/fuse-logo/img?id=s0__s6' }
+    scene.setFuseResult(scene.fuse!.id, result)
+    expect(scene.fuse!.doneAt).toBe(scene.now)
+    step([cur(1, 500, 300, true)], [start(1, 500, 300)])
+    step([cur(1, 500, 40, true)])
+    expect(onOpenFused.mock.calls[0][2]).toEqual(result)
   })
 })

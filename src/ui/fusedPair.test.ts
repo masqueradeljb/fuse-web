@@ -23,7 +23,7 @@ describe('fusedPair', () => {
     const s = memoryStorage()
     const id = saveFusedPair(a, b, s)
     expect(id).toBe('mine.com__spotify')
-    expect(readFusedPair(id, s)).toEqual([a, b])
+    expect(readFusedPair(id, s)).toEqual({ a, b })
   })
   it('removes other stored pairs when saving a new one', () => {
     const s = memoryStorage()
@@ -32,8 +32,13 @@ describe('fusedPair', () => {
     const c: Site = { ...a, id: 'other.com' }
     const idB = saveFusedPair(c, b, s)
     expect(readFusedPair(idA, s)).toBeNull()
-    expect(readFusedPair(idB, s)).toEqual([c, b])
+    expect(readFusedPair(idB, s)).toEqual({ a: c, b })
     expect(s.getItem('other-key')).toBe('keep')
+  })
+  it('stores the fused logo with the pair', () => {
+    const s = memoryStorage()
+    const id = saveFusedPair(a, b, s, '/api/fuse-logo/img?id=mine.com__spotify')
+    expect(readFusedPair(id, s)).toEqual({ a, b, logoUrl: '/api/fuse-logo/img?id=mine.com__spotify' })
   })
   it('returns null for unknown or corrupt entries', () => {
     const s = memoryStorage()
