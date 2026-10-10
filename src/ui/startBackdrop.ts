@@ -162,10 +162,12 @@ export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[]): { stop(
   function makeOrbs() {
     orbs.length = 0
     if (!sites.length) return
-    const count = Math.max(7, Math.min(14, Math.round((w * h) / 90000)))
+    // one orb per site, never a repeat; a fused orb is just its two orbs, hidden until they split
+    const unique = [...new Map(sites.map((s) => [s.id, s])).values()]
+    const count = Math.min(unique.length, Math.max(7, Math.min(14, Math.round((w * h) / 90000))))
     const scale = Math.min(1, Math.max(0.65, Math.min(w, h) / 800))
     for (let i = 0; i < count; i++) {
-      const site = sites[i % sites.length]
+      const site = unique[i]
       const rgb = rgbOf(site.color)
       const r = rand(24, 52) * scale
       let x = 0
