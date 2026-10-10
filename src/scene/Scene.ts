@@ -69,6 +69,8 @@ export interface SceneOptions {
 const SLOT_OF: Record<Side, 0 | 1> = { left: 0, right: 1 }
 
 const SLOTS = [0, 1] as const
+/** after opening the fused page, the top zone is ignored this long */
+const OPEN_COOLDOWN_MS = 1000
 const SIDES = ['left', 'right'] as const
 const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
 const lerp = (a: Point, b: Point, k: number): Point => ({ x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k })
@@ -93,6 +95,7 @@ export class Scene {
   private width: number
   private height: number
   private nextFuseId = 1
+  private openCooldownUntil = 0
 
   constructor(opts: SceneOptions) {
     if (!opts.leftSites.length || !opts.rightSites.length) throw new Error('need at least one site on each side')
@@ -126,10 +129,18 @@ export class Scene {
     const left = [site.id, ...this.shelves.left.filter((id) => id !== site.id)]
     if (!this.isSlotHeld(0)) this.slots[0] = site.id
     // keep at most `rows`, never dropping the site that's in the left slot
+    const keep = new Set<string>([this.slots[0]])
+    for (const h of this.held.values()) if (h.siteId) keep.add(h.siteId)
     for (let i = left.length - 1; left.length > this.rows && i >= 0; i--) {
-      if (left[i] !== this.slots[0]) left.splice(i, 1)
+      if (!keep.has(left[i])) left.splice(i, 1)
     }
     this.shelves.left.splice(0, this.shelves.left.length, ...left)
+    // held left-shelf logos keep their way home by site id
+    for (const h of this.held.values()) {
+      if (h.from.kind === 'shelf' && h.from.side === 'left' && h.siteId) {
+        h.from = { kind: 'shelf', side: 'left', index: Math.max(0, this.shelves.left.indexOf(h.siteId)) }
+      }
+    }
     this.layout = this.relayout()
   }
 
@@ -227,12 +238,14 @@ export class Scene {
     const f = this.fuse
     if (!f) return
     const { top, bottom } = this.cardZones()
-    if (card.target.y > bottom) {
+    const handY = card.target.y - card.grabOffset.y
+    if (handY > bottom) {
       this.held.delete(card.handId)
       this.fuse = null
-    } else if (card.target.y < top && f.status === 'done') {
+    } else if (handY < top && f.status === 'done' && this.now >= this.openCooldownUntil) {
       // let go so it glides back; the hand must release and grip again to re-open
       this.held.delete(card.handId)
+      this.openCooldownUntil = this.now + OPEN_COOLDOWN_MS
       this.onOpenFused(this.site(f.siteA), this.site(f.siteB))
     }
   }
@@ -248,12 +261,13 @@ export class Scene {
     return this.fuse ? this.fuse.at : this.layout.center
   }
 
-  private shelfPosOf(siteId: string): Point {
+  /** where a site rests on a shelf; if it was trimmed off, the first spot on `preferred` side */
+  private shelfPosOf(siteId: string, preferred: Side): Point {
     for (const side of SIDES) {
       const index = this.shelves[side].indexOf(siteId)
       if (index !== -1) return this.layout.shelf[side][index]
     }
-    throw new Error(`site ${siteId} is not on a shelf`)
+    return this.layout.shelf[preferred][0] ?? this.layout.center
   }
 
   private slotAt(p: Point): 0 | 1 | null {
@@ -296,7 +310,7 @@ export class Scene {
       const slot = SLOT_OF[h.from.side]
       if (target === slot && !this.isSlotHeld(slot)) {
         const replaced = this.slots[slot]
-        if (replaced !== siteId) this.fly(replaced, L.slots[slot], this.shelfPosOf(replaced), L.slotRadius, L.shelfRadius)
+        if (replaced !== siteId) this.fly(replaced, L.slots[slot], this.shelfPosOf(replaced, h.from.side), L.slotRadius, L.shelfRadius)
         this.slots[slot] = siteId
         this.fly(siteId, h.pos, L.slots[slot], r, L.slotRadius, slot)
       } else {

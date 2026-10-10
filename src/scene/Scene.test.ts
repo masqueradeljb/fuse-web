@@ -291,6 +291,50 @@ describe('Scene fuse', () => {
   })
 })
 
+describe('Scene card zones follow the hand', () => {
+  function finished() {
+    const ctx = setup()
+    const { scene, step } = ctx
+    step([cur(1, 300, 300, true)], [start(1, 300, 300)])
+    step([cur(1, 700, 300)], [end(1, 700, 300)])
+    step([])
+    return ctx
+  }
+
+  it('dismisses when the cursor, not the card, enters the bottom zone', () => {
+    const { scene, step } = finished()
+    step([cur(1, 500, 400, true)], [start(1, 500, 400)])
+    expect(scene.held.get(1)?.from).toEqual({ kind: 'card' })
+    step([cur(1, 500, 520, true)])
+    expect(scene.fuse).toBeNull()
+  })
+
+  it('opens when the cursor, not the card, enters the top zone', () => {
+    const { scene, onOpenFused, step } = finished()
+    scene.setFuseResult(scene.fuse!.id, { siteA: 's0', siteB: 's6', label: 'x' })
+    step([cur(1, 500, 200, true)], [start(1, 500, 200)])
+    step([cur(1, 500, 80, true)])
+    expect(onOpenFused).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores the top zone for 1s after opening', () => {
+    const { scene, onOpenFused, step } = finished()
+    scene.setFuseResult(scene.fuse!.id, { siteA: 's0', siteB: 's6', label: 'x' })
+    step([cur(1, 500, 300, true)], [start(1, 500, 300)])
+    step([cur(1, 500, 40, true)])
+    expect(onOpenFused).toHaveBeenCalledTimes(1)
+    step([cur(1, 500, 300)], [end(1, 500, 300)])
+    step([cur(1, 500, 300, true)], [start(1, 500, 300)])
+    step([cur(1, 500, 40, true)])
+    expect(onOpenFused).toHaveBeenCalledTimes(1)
+    step([cur(1, 500, 300)], [end(1, 500, 300)])
+    for (let i = 0; i < 70; i++) step([])
+    step([cur(1, 500, 300, true)], [start(1, 500, 300)])
+    step([cur(1, 500, 40, true)])
+    expect(onOpenFused).toHaveBeenCalledTimes(2)
+  })
+})
+
 describe('Scene grab offset and flights', () => {
   it('keeps the grab offset instead of jumping to the cursor', () => {
     const { scene, step } = setup()
@@ -384,5 +428,23 @@ describe('Scene: your sites', () => {
     expect(scene.slots).toEqual(['mine.com', 's0'])
     expect(scene.layout.shelf.left).toHaveLength(1)
     expect(scene.layout.shelf.right[6].x).toBe(880)
+  })
+
+  it('keeps a held shelf logo and sends it to its new position', () => {
+    const { scene, step } = setup()
+    step([cur(1, 48, row(5), true)], [start(1, 48, row(5))])
+    expect(scene.held.get(1)?.siteId).toBe('s5')
+    scene.addLeftSite(site('mine.com'))
+    expect(scene.shelves.left).toContain('s5')
+    const idx = scene.shelves.left.indexOf('s5')
+    step([cur(1, 500, 100)], [end(1, 500, 100)])
+    expect(scene.flights).toEqual([expect.objectContaining({ siteId: 's5', to: scene.layout.shelf.left[idx] })])
+  })
+
+  it('does not throw when the replaced slot site is no longer on a shelf', () => {
+    const { scene, step } = setup()
+    for (let i = 0; i < 7; i++) scene.addLeftSite(site(`m${i}.com`))
+    step([cur(1, 48, row(1), true)], [start(1, 48, row(1))])
+    expect(() => step([cur(1, 300, 300)], [end(1, 300, 300)])).not.toThrow()
   })
 })
