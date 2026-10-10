@@ -212,3 +212,24 @@ git commit -m "feat: angle transfer, richer hero capture, generated hero image +
 ### Task C: Live run (controller)
 
 - [ ] Own dev server on 5299; fuse a builder-ish site (left) with Uber (right, has a hero video) via `POST /api/fuse-site`; time it; screenshot the page; check the angle line, the generated hero and the video background. Stop the server by PID.
+
+---
+
+### Task D: "THE Fused Web" landing page with a living backdrop (owner request)
+
+**Files:** `index.html`, `src/style.css`, `src/ui/startBackdrop.ts` (new), `src/main.ts`, `README.md` (title only)
+
+- [ ] **Copy:** `<title>` and start-page `<h1>` → **THE Fused Web**; subtitle → "Paste your URL, then fuse it."; button → "Fuse". The h1 uses an animated multicolor gradient text (`background-clip: text`, slow hue drift; static under reduced motion). Wrap the subtitle + form + status in a frosted panel (`backdrop-filter: blur`, translucent dark) so text stays readable over the animation.
+- [ ] **Backdrop** (`startBackdrop.ts`, a full-screen canvas behind `#start` content, `pointer-events: none`), API: `startBackdrop(canvas, sites): { stop(): void }`:
+  - **Base:** dark background with 4–5 large soft radial-gradient blobs in brand colors drifting slowly (additive blend), so the page reads colorful, not black.
+  - **Ambient particles:** ~60 tiny glowing dots in brand colors drifting/twinkling.
+  - **Logo orbs:** ~14 orbs from `REFERENCE_SITES` (brand-color circle + glyph via `logoImage` from `src/render/logoImages.ts`), radius 24–52 px, drifting with gentle velocities, bouncing off edges, elastic orb–orb collisions that emit a small spark burst at the contact point in both colors.
+  - **Fusion loop:** every ~2.5–4 s pick two orbs not already fusing, steer them toward each other; on contact: squash + jitter for ~0.4 s (echoing the stage's collision fuse), then flash + shockwave ring + confetti burst, and they merge into one larger orb with a split two-color fill (A | B) and both glyphs overlapped, pulsing; after ~2 s it splits back into the two orbs flying apart (or respawns them from the edges). At most two fusions active at once.
+  - **Performance:** DPR-aware; ≤ ~200 particles total; pause on `document.hidden`; `stop()` cancels the RAF loop and clears listeners. Resize-aware.
+  - **Reduced motion:** draw one static composed frame (blobs + orbs, no loop).
+- [ ] **Wire-up:** `main.ts` starts the backdrop on load and calls `stop()` in `startStage`.
+- [ ] No tests (visual). Verify `npm run typecheck && npm test && npm run build`.
+```bash
+git add index.html src README.md
+git commit -m "feat: THE Fused Web landing page with a colliding, fusing logo backdrop"
+```
