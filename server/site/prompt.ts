@@ -34,7 +34,9 @@ export function buildPagePrompt(p: PagePromptInput): string {
     `- No <script>, no inline event handlers, no iframes, no forms that submit anywhere.`,
     `- Fonts: use the reference site's font-family names with sensible system fallbacks. You may add one Google Fonts <link> if a family is clearly a Google font.`,
     `- Structure: follow ${B}'s section order; typically sticky nav (fused logo + 3–5 links), hero in ${B}'s format, 3 feature cards, a CTA band, a footer.`,
-    `- Put the fused logo in the nav and once in the hero: <img src="${p.logoUrl}" alt="fused logo">.`,
+    `- Put the fused logo in the nav only: <img src="${p.logoUrl}" alt="fused logo">. Don't repeat it elsewhere.`,
+    `- Mirror ${B}'s hero elements exactly — include an eyebrow/badge/pill above the headline only if ${B}'s captured hero has a non-empty "eyebrow", and nothing ${B}'s hero doesn't have.`,
+    `- Never invent decorative elements that neither site has (badges, pills, tag chips, announcement bars, icon rows, testimonials, logo walls, stats). Every element should trace back to ${B}'s structure or ${A}'s content.`,
     `- Hero visual: use <img src="${p.heroImageUrl}" alt=""> as the main hero visual.`,
     video
       ? `- Also place <video autoplay muted loop playsinline${video.poster ? ` poster="${video.poster}"` : ''} src="${video.src}"></video> as a full-bleed background behind the hero with a dark tint overlay so text stays readable.`
