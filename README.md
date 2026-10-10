@@ -5,8 +5,8 @@ Grab two website logos with your hands and fuse them into something new.
 Enter your site on the start page and its logo is fetched for you. Your webcam tracks both
 hands in the browser (MediaPipe): your logo sits on the left, 12 reference sites on the
 right. Pinch or make a fist to grab, hold one logo in each hand and smash them together to
-fuse. Pull the result card up to open its fused page, or down to dismiss it. The fuse
-itself is still a placeholder; AI fusion is next — see `docs/superpowers/specs/`.
+fuse. The dev server asks OpenAI for one new logo that fuses the two (see "Fusion
+(OpenAI)" below). Pull the result card up to open its fused page, or down to dismiss it.
 
 ## Run
 
@@ -19,7 +19,7 @@ npm run dev
 (~7.5 MB) into `public/` (both git-ignored), so the app works offline afterwards.
 
 Open http://localhost:5173, enter your site on the start page, and allow camera access. Everything runs locally in the
-browser; no API keys are needed for Phase 1.
+browser; without an OpenAI key the fuse falls back to a placeholder.
 
 If the camera prompt doesn't appear on macOS, allow your browser under System Settings →
 Privacy & Security → Camera, then reload.
@@ -34,6 +34,18 @@ Privacy & Security → Camera, then reload.
   opens in-app, so allow pop-ups for the site to get tabs), pull it **down** to dismiss.
 - `/api/logo` fetches public pages from your machine; it only runs in `npm run dev` /
   `npm run preview`.
+
+## Fusion (OpenAI)
+
+- Set `OPENAI_API_KEY` in your shell, or copy `.env.example` to `.env` (git-ignored) and
+  fill it in. The key is only read by the dev server (`/api/fuse-logo`); it is never sent
+  to the browser.
+- The **left** slot gives the subject, the **right** slot gives the style.
+- A fusion takes ~10–30 s. Results are cached in `cache/fused/`, so the same pair again is
+  instant and free.
+- The dev-server console prints the cost of each generation. `FUSE_MAX_GENERATIONS`
+  caps generations per server run (default 50).
+- Without a key you get the placeholder fuse (a banner says so).
 
 ## Controls
 

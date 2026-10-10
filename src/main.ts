@@ -2,7 +2,8 @@ import './style.css'
 import { gripConfig } from './config'
 import { REFERENCE_SITES, SHELF_ROWS } from './data/sites'
 import { DebugPanel } from './debug/DebugPanel'
-import { PlaceholderFuseClient } from './fuse/FuseClient'
+import { AiFuseClient, NoKeyError } from './fuse/AiFuseClient'
+import { PlaceholderFuseClient, type FuseResult } from './fuse/FuseClient'
 import { GestureEngine } from './gesture/GestureEngine'
 import { MouseHand } from './input/MouseHand'
 import { Renderer } from './render/Renderer'
@@ -10,6 +11,7 @@ import { Scene } from './scene/Scene'
 import { HandTracker } from './tracking/HandTracker'
 import { bindSiteForm } from './ui/siteForm'
 import { bindOverlayClose, openFused } from './ui/fusedView'
+import { hideFusedTitle, showFusedTitle } from './ui/fusedTitle'
 import type { InputFrame, Site, TrackedHand } from './types'
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!
@@ -23,8 +25,14 @@ const startStatus = document.querySelector<HTMLElement>('#start-status')!
 const addForm = document.querySelector<HTMLFormElement>('#add-site')!
 const addStatus = document.querySelector<HTMLElement>('#add-status')!
 const overlay = document.querySelector<HTMLElement>('#fused-overlay')!
+const fusedTitle = document.querySelector<HTMLElement>('#fused-title')!
 
-const fuseClient = new PlaceholderFuseClient()
+const fuseClient = new AiFuseClient()
+/** used when the dev server has no OpenAI key */
+const fallback = new PlaceholderFuseClient(0)
+/** in-flight fusions, aborted when their card is dismissed */
+const pending = new Map<number, AbortController>()
+let noKeyNoticeShown = false
 let scene: Scene | null = null
 const renderer = new Renderer(canvas, REFERENCE_SITES)
 const engine = new GestureEngine(gripConfig)
@@ -81,6 +89,37 @@ function showBanner(text: string, hideAfterMs?: number) {
   }
 }
 
+/** Hands a result to the scene once its logo can be drawn, so the burst and the reveal line up. */
+async function deliver(a: Site, b: Site, fuseId: number, result: FuseResult) {
+  if (result.logoUrl) await renderer.prepareResult(result.logoUrl)
+  if (scene?.fuse?.id !== fuseId) return
+  scene.setFuseResult(fuseId, result)
+  showFusedTitle(fusedTitle, a, b)
+}
+
+async function runFuse(a: Site, b: Site, fuseId: number) {
+  const ctrl = new AbortController()
+  pending.set(fuseId, ctrl)
+  try {
+    await deliver(a, b, fuseId, await fuseClient.fuse(a, b, ctrl.signal))
+  } catch (err) {
+    if (ctrl.signal.aborted || (err as Error)?.name === 'AbortError') return
+    if (err instanceof NoKeyError) {
+      if (!noKeyNoticeShown) {
+        noKeyNoticeShown = true
+        showBanner('No OpenAI key on the dev server (see README) — showing a placeholder fuse.', 6000)
+      }
+      await deliver(a, b, fuseId, await fallback.fuse(a, b))
+      return
+    }
+    console.error('fuse failed', err)
+    showBanner(err instanceof Error ? err.message : 'Fusion failed', 6000)
+    scene?.setFuseError(fuseId)
+  } finally {
+    pending.delete(fuseId)
+  }
+}
+
 function startStage(site: Site) {
   start.hidden = true
   addForm.hidden = false
@@ -91,18 +130,19 @@ function startStage(site: Site) {
     rows: SHELF_ROWS,
     width: innerWidth,
     height: innerHeight,
-    onFuse: (a, b, fuseId) => {
-      fuseClient.fuse(a, b).then(
-        (result) => scene?.setFuseResult(fuseId, result),
-        (err) => {
-          console.error('fuse failed', err)
-          scene?.setFuseError(fuseId)
-        },
-      )
+    onFuse: (a, b, fuseId) => void runFuse(a, b, fuseId),
+    onFuseDismissed: (fuseId) => {
+      pending.get(fuseId)?.abort()
+      pending.delete(fuseId)
+      hideFusedTitle(fusedTitle)
     },
-    onOpenFused: (a, b) =>
-      openFused(a, b, overlay, () =>
-        showBanner('Pop-up blocked — showing it here. Allow pop-ups for this site to open fused pages in a new tab.', 6000),
+    onOpenFused: (a, b, result) =>
+      openFused(
+        a,
+        b,
+        overlay,
+        () => showBanner('Pop-up blocked — showing it here. Allow pop-ups for this site to open fused pages in a new tab.', 6000),
+        result?.logoUrl,
       ),
   })
   void startCamera()
