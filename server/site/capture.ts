@@ -64,6 +64,20 @@ async function blockedCapture(url: string): Promise<SiteCapture> {
 }
 
 /** Headless-Chromium site capture, cached per host in `cacheDir` (json + jpg). */
+/** Hides cookie/consent overlays (known vendors, plus fixed/sticky boxes mentioning cookies). Plain JS on purpose. */
+const HIDE_CONSENT_JS = String.raw`(() => {
+  const known = '#onetrust-consent-sdk, #onetrust-banner-sdk, #CybotCookiebotDialog, #usercentrics-root, #truste-consent-track, .cc-window, .cky-consent-container, .osano-cm-window, [id^="sp_message_container"]'
+  document.querySelectorAll(known).forEach((el) => el.style.setProperty('display', 'none', 'important'))
+  const words = /cookie|consent|privacy preferences|gdpr/i
+  for (const el of document.querySelectorAll('body *')) {
+    const cs = getComputedStyle(el)
+    if (cs.position !== 'fixed' && cs.position !== 'sticky') continue
+    if (el.closest('header, nav')) continue
+    const text = (el.innerText || '').slice(0, 600)
+    if (words.test(text) && text.length < 1500) el.style.setProperty('display', 'none', 'important')
+  }
+})()`
+
 export function createCapturer(cacheDir: string) {
   let browser: Promise<Browser> | null = null
   const inFlight = new Map<string, Promise<CaptureResult>>()
@@ -111,11 +125,16 @@ export function createCapturer(cacheDir: string) {
       }
       await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {})
       await page.waitForTimeout(500)
+      // keep cookie/consent popups out of snapshots and the screenshot
+      await page.evaluate(HIDE_CONSENT_JS).catch(() => {})
       const data = (await page.evaluate(INSPECT_PAGE_JS)) as Omit<SiteCapture, 'url'>
       data.videos = videos
       if (data.hero.media === 'video' && !data.hero.src && videos[0]) data.hero.src = videos[0]
       if (data.hero.media === 'video' && !data.hero.src) data.hero.media = data.hero.poster ? 'image' : 'none'
       if (data.hero.media === 'image' && !data.hero.src && data.hero.poster) data.hero.src = data.hero.poster
+      // the top-of-page screenshot first: taking snapshots scrolls the page
+      await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {})
+      const screenshot = await page.screenshot({ type: 'jpeg', quality: 70 }).catch(() => null)
       data.snapshots = []
       try {
         const marks = (await page.evaluate(MARK_SNAPSHOTS_JS)) as { n: number; w: number; h: number }[]
@@ -129,7 +148,6 @@ export function createCapturer(cacheDir: string) {
       } catch {
         /* snapshots are optional */
       }
-      const screenshot = await page.screenshot({ type: 'jpeg', quality: 70 }).catch(() => null)
       return { capture: { url, ...data }, screenshot }
     } finally {
       await context.close().catch(() => {})
