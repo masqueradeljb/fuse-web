@@ -24,8 +24,8 @@ export const sceneConfig = {
   followStiffness: 18,
   /** fly-back animation length */
   returnMs: 300,
-  /** fraction of width at each edge where dropping the result card dismisses it */
-  dismissEdge: 0.15,
+  /** fraction of height at the top (open fused page) and bottom (dismiss) where a held card triggers */
+  cardZone: 0.15,
   /** held logos render this much bigger */
   heldScale: 1.1,
 }

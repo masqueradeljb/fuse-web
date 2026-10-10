@@ -22,13 +22,16 @@ const end = (handId: number, x: number, y: number): GripEvent => ({ type: 'gripE
 
 function setup() {
   const onFuse = vi.fn()
+  const onOpenFused = vi.fn()
   // huge stiffness: held logos snap to the cursor each step, so tests don't wait on springs
   const scene = new Scene({
-    sites: SITES,
-    perShelf: 6,
+    leftSites: SITES.slice(0, 6),
+    rightSites: SITES.slice(6),
+    rows: 6,
     width: 1000,
     height: 600,
     onFuse,
+    onOpenFused,
     config: { ...sceneConfig, followStiffness: 1e6 },
   })
   let t = 1000
@@ -37,7 +40,7 @@ function setup() {
     t += 16
     scene.update(t, { cursors, events })
   }
-  return { scene, onFuse, step }
+  return { scene, onFuse, onOpenFused, step }
 }
 
 describe('Scene basics', () => {
@@ -78,15 +81,15 @@ describe('Scene basics', () => {
     expect(scene.flights).toEqual([expect.objectContaining({ siteId: 's0', to: { x: 300, y: 300 }, hideSlot: 0 })])
   })
 
-  it('pulling a shelf logo onto a slot replaces it and sends the old one home', () => {
+  it('pulling a reference logo onto the right slot replaces it and sends the old one home', () => {
     const { scene, step } = setup()
-    step([cur(1, 48, row(2), true)], [start(1, 48, row(2))])
-    expect(scene.held.get(1)?.siteId).toBe('s2')
+    step([cur(1, 952, row(2), true)], [start(1, 952, row(2))])
+    expect(scene.held.get(1)?.siteId).toBe('s8')
     step([cur(1, 700, 300, true)])
     step([cur(1, 700, 300)], [end(1, 700, 300)])
-    expect(scene.slots).toEqual(['s0', 's2'])
+    expect(scene.slots).toEqual(['s0', 's8'])
     expect(scene.flights).toContainEqual(expect.objectContaining({ siteId: 's6', to: { x: 952, y: row(0) } }))
-    expect(scene.flights).toContainEqual(expect.objectContaining({ siteId: 's2', hideSlot: 1 }))
+    expect(scene.flights).toContainEqual(expect.objectContaining({ siteId: 's8', hideSlot: 1 }))
   })
 
   it('a shelf logo dropped on nothing goes back to its shelf', () => {
@@ -97,11 +100,26 @@ describe('Scene basics', () => {
     expect(scene.flights).toEqual([expect.objectContaining({ siteId: 's2', to: { x: 48, y: row(2) } })])
   })
 
-  it('refuses to put the same site in both slots', () => {
+  it('your logos only go in the left slot', () => {
     const { scene, step } = setup()
-    step([cur(1, 952, row(0), true)], [start(1, 952, row(0))]) // s6, already in slot 1
+    step([cur(1, 48, row(2), true)], [start(1, 48, row(2))])
+    step([cur(1, 700, 300)], [end(1, 700, 300)])
+    expect(scene.slots).toEqual(['s0', 's6'])
+    expect(scene.flights).toEqual([expect.objectContaining({ siteId: 's2', to: { x: 48, y: row(2) } })])
+  })
+
+  it('reference logos only go in the right slot', () => {
+    const { scene, step } = setup()
+    step([cur(1, 952, row(2), true)], [start(1, 952, row(2))])
     step([cur(1, 300, 300)], [end(1, 300, 300)])
     expect(scene.slots).toEqual(['s0', 's6'])
+  })
+
+  it('a left-shelf logo can replace the left slot', () => {
+    const { scene, step } = setup()
+    step([cur(1, 48, row(2), true)], [start(1, 48, row(2))])
+    step([cur(1, 300, 300)], [end(1, 300, 300)])
+    expect(scene.slots).toEqual(['s2', 's6'])
   })
 
   it('flights expire after returnMs', () => {
@@ -153,21 +171,55 @@ describe('Scene fuse', () => {
     expect(scene.held.size).toBe(0)
   })
 
-  it('the card glides to center, shows the result, and is dismissed at an edge', () => {
+  it('the card glides to center and is dismissed by pulling it into the bottom zone, without releasing', () => {
     const { scene, step } = setup()
     step([cur(1, 300, 300, true)], [start(1, 300, 300)])
     step([cur(1, 700, 300)], [end(1, 700, 300)])
     step([])
     expect(scene.fuse?.at).toEqual({ x: 500, y: 300 })
-    scene.setFuseResult(scene.fuse!.id, { siteA: 's0', siteB: 's6', label: 'Site 0 × Site 6' })
-    expect(scene.fuse?.status).toBe('done')
-
     step([cur(1, 500, 300, true)], [start(1, 500, 300)])
-    expect(scene.held.get(1)?.from).toEqual({ kind: 'card' })
-    step([cur(1, 50, 300, true)])
-    step([cur(1, 50, 300)], [end(1, 50, 300)])
+    step([cur(1, 500, 400, true)])
+    expect(scene.fuse).not.toBeNull()
+    step([cur(1, 500, 580, true)])
     expect(scene.fuse).toBeNull()
+    expect(scene.held.size).toBe(0)
+    step([cur(1, 500, 580)], [end(1, 500, 580)])
     expect(scene.slots).toEqual(['s0', 's6'])
+  })
+
+  it('left and right edges no longer dismiss', () => {
+    const { scene, step } = setup()
+    step([cur(1, 300, 300, true)], [start(1, 300, 300)])
+    step([cur(1, 700, 300)], [end(1, 700, 300)])
+    step([cur(1, 500, 300, true)], [start(1, 500, 300)])
+    step([cur(1, 30, 300, true)])
+    step([cur(1, 30, 300)], [end(1, 30, 300)])
+    expect(scene.fuse).not.toBeNull()
+  })
+
+  it('pulling a finished card into the top zone opens it once and lets it go', () => {
+    const { scene, onOpenFused, step } = setup()
+    step([cur(1, 300, 300, true)], [start(1, 300, 300)])
+    step([cur(1, 700, 300)], [end(1, 700, 300)])
+    scene.setFuseResult(scene.fuse!.id, { siteA: 's0', siteB: 's6', label: 'Site 0 × Site 6' })
+    step([cur(1, 500, 300, true)], [start(1, 500, 300)])
+    step([cur(1, 500, 40, true)])
+    expect(onOpenFused).toHaveBeenCalledTimes(1)
+    expect(onOpenFused.mock.calls[0].map((s: Site) => s.id)).toEqual(['s0', 's6'])
+    expect(scene.held.size).toBe(0)
+    step([cur(1, 500, 40, true)])
+    expect(onOpenFused).toHaveBeenCalledTimes(1)
+    expect(scene.fuse?.at).toEqual({ x: 500, y: 300 })
+  })
+
+  it('the top zone does nothing while still fusing', () => {
+    const { scene, onOpenFused, step } = setup()
+    step([cur(1, 300, 300, true)], [start(1, 300, 300)])
+    step([cur(1, 700, 300)], [end(1, 700, 300)])
+    step([cur(1, 500, 300, true)], [start(1, 500, 300)])
+    step([cur(1, 500, 40, true)])
+    expect(onOpenFused).not.toHaveBeenCalled()
+    expect(scene.held.size).toBe(1)
   })
 
   it('a card dropped near the middle stays', () => {
@@ -211,7 +263,8 @@ describe('Scene fuse', () => {
     step([cur(1, 700, 300)], [end(1, 700, 300)])
     const oldId = scene.fuse!.id
     step([cur(1, 500, 300, true)], [start(1, 500, 300)])
-    step([cur(1, 50, 300)], [end(1, 50, 300)])
+    step([cur(1, 500, 580, true)])
+    step([cur(1, 500, 580)], [end(1, 500, 580)])
     expect(scene.fuse).toBeNull()
     step([cur(1, 300, 300, true)], [start(1, 300, 300)])
     step([cur(1, 700, 300)], [end(1, 700, 300)])
@@ -250,11 +303,13 @@ describe('Scene grab offset and flights', () => {
   it('does not fuse on a 4:3 window when gripping the inner edges', () => {
     const onFuse = vi.fn()
     const scene = new Scene({
-      sites: SITES,
-      perShelf: 6,
+      leftSites: SITES.slice(0, 6),
+      rightSites: SITES.slice(6),
+      rows: 6,
       width: 1024,
       height: 768,
       onFuse,
+      onOpenFused: vi.fn(),
       config: { ...sceneConfig, followStiffness: 1e6 },
     })
     let t = 1000
@@ -286,5 +341,48 @@ describe('Scene grab offset and flights', () => {
     for (let i = 0; i < 20; i++) step([])
     step([cur(2, 300, 300, true)], [start(2, 300, 300)])
     expect(scene.held.size).toBe(1)
+  })
+})
+
+describe('Scene: your sites', () => {
+  const site = (id: string): Site => ({ id, name: id, url: `https://${id}`, color: '#123456', logoUrl: `/x/${id}` })
+
+  it('adds a site to the front of the left shelf and into the left slot', () => {
+    const { scene } = setup()
+    scene.addLeftSite(site('mine.com'))
+    expect(scene.shelves.left).toEqual(['mine.com', 's0', 's1', 's2', 's3', 's4'])
+    expect(scene.slots[0]).toBe('mine.com')
+    expect(scene.site('mine.com').name).toBe('mine.com')
+    expect(scene.layout.shelf.left).toHaveLength(6)
+  })
+
+  it('re-adding an existing site moves it to the front', () => {
+    const { scene } = setup()
+    scene.addLeftSite(SITES[3])
+    expect(scene.shelves.left).toEqual(['s3', 's0', 's1', 's2', 's4', 's5'])
+    expect(scene.slots[0]).toBe('s3')
+  })
+
+  it('does not swap the left slot while it is held', () => {
+    const { scene, step } = setup()
+    step([cur(1, 300, 300, true)], [start(1, 300, 300)])
+    scene.addLeftSite(site('mine.com'))
+    expect(scene.slots[0]).toBe('s0')
+    expect(scene.shelves.left).toContain('s0')
+  })
+
+  it('starts with one site on the left and lays 12 reference sites in two columns', () => {
+    const scene = new Scene({
+      leftSites: [site('mine.com')],
+      rightSites: SITES,
+      rows: 6,
+      width: 1000,
+      height: 600,
+      onFuse: vi.fn(),
+      onOpenFused: vi.fn(),
+    })
+    expect(scene.slots).toEqual(['mine.com', 's0'])
+    expect(scene.layout.shelf.left).toHaveLength(1)
+    expect(scene.layout.shelf.right[6].x).toBe(880)
   })
 })

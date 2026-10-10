@@ -13,22 +13,25 @@ export interface Layout {
   center: Point
 }
 
-export function computeLayout(width: number, height: number, perShelf: number): Layout {
+/** Shelves fill top to bottom in columns of `rows`, outermost column first. */
+export function computeLayout(width: number, height: number, counts: Record<Side, number>, rows: number): Layout {
   const short = Math.min(width, height)
   const shelfRadius = Math.round(short * 0.05)
   const slotRadius = Math.round(short * 0.12)
   const inset = Math.round(shelfRadius * 1.6)
-  const ys = Array.from({ length: perShelf }, (_, i) => (height * (i + 1)) / (perShelf + 1))
+  const colGap = Math.round(shelfRadius * 2.4)
+  const place = (side: Side, count: number): Point[] =>
+    Array.from({ length: count }, (_, i) => {
+      const offset = inset + Math.floor(i / rows) * colGap
+      return { x: side === 'left' ? offset : width - offset, y: (height * ((i % rows) + 1)) / (rows + 1) }
+    })
   return {
     width,
     height,
     shelfRadius,
     slotRadius,
     cardRadius: Math.round(slotRadius * 1.5),
-    shelf: {
-      left: ys.map((y) => ({ x: inset, y })),
-      right: ys.map((y) => ({ x: width - inset, y })),
-    },
+    shelf: { left: place('left', counts.left), right: place('right', counts.right) },
     slots: [
       { x: width * 0.3, y: height / 2 },
       { x: width * 0.7, y: height / 2 },

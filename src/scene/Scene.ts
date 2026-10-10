@@ -51,13 +51,22 @@ export interface FuseState {
 }
 
 export interface SceneOptions {
-  sites: Site[]
-  perShelf: number
+  /** the user's sites, newest first; the first fills the left slot */
+  leftSites: Site[]
+  /** reference sites; the first fills the right slot */
+  rightSites: Site[]
+  /** logos per shelf column; also the max number of the user's sites kept */
+  rows: number
   width: number
   height: number
   onFuse: (a: Site, b: Site, fuseId: number) => void
+  /** a finished card was pulled into the top zone */
+  onOpenFused: (a: Site, b: Site) => void
   config?: SceneConfig
 }
+
+/** each shelf feeds one center slot: your sites -> left, reference sites -> right */
+const SLOT_OF: Record<Side, 0 | 1> = { left: 0, right: 1 }
 
 const SLOTS = [0, 1] as const
 const SIDES = ['left', 'right'] as const
@@ -76,22 +85,27 @@ export class Scene {
   fuse: FuseState | null = null
   now = 0
 
-  private readonly sitesById: Map<string, Site>
+  private readonly sitesById = new Map<string, Site>()
   private readonly config: SceneConfig
   private readonly onFuse: (a: Site, b: Site, fuseId: number) => void
+  private readonly onOpenFused: (a: Site, b: Site) => void
+  private readonly rows: number
+  private width: number
+  private height: number
   private nextFuseId = 1
-  private readonly perShelf: number
 
   constructor(opts: SceneOptions) {
-    if (opts.sites.length < opts.perShelf * 2) throw new Error(`need at least ${opts.perShelf * 2} sites`)
+    if (!opts.leftSites.length || !opts.rightSites.length) throw new Error('need at least one site on each side')
     this.config = opts.config ?? defaultConfig
-    this.perShelf = opts.perShelf
+    this.rows = opts.rows
     this.onFuse = opts.onFuse
-    this.sitesById = new Map(opts.sites.map((s) => [s.id, s]))
-    const ids = opts.sites.map((s) => s.id)
-    this.shelves = { left: ids.slice(0, opts.perShelf), right: ids.slice(opts.perShelf, opts.perShelf * 2) }
+    this.onOpenFused = opts.onOpenFused
+    for (const s of [...opts.leftSites, ...opts.rightSites]) this.sitesById.set(s.id, s)
+    this.shelves = { left: opts.leftSites.slice(0, opts.rows).map((s) => s.id), right: opts.rightSites.map((s) => s.id) }
     this.slots = [this.shelves.left[0], this.shelves.right[0]]
-    this.layout = computeLayout(opts.width, opts.height, opts.perShelf)
+    this.width = opts.width
+    this.height = opts.height
+    this.layout = this.relayout()
   }
 
   site(id: string): Site {
@@ -101,7 +115,36 @@ export class Scene {
   }
 
   resize(width: number, height: number): void {
-    this.layout = computeLayout(width, height, this.perShelf)
+    this.width = width
+    this.height = height
+    this.layout = this.relayout()
+  }
+
+  /** Adds one of the user's sites (or moves it) to the front of the left shelf and into the left slot. */
+  addLeftSite(site: Site): void {
+    this.sitesById.set(site.id, site)
+    const left = [site.id, ...this.shelves.left.filter((id) => id !== site.id)]
+    if (!this.isSlotHeld(0)) this.slots[0] = site.id
+    // keep at most `rows`, never dropping the site that's in the left slot
+    for (let i = left.length - 1; left.length > this.rows && i >= 0; i--) {
+      if (left[i] !== this.slots[0]) left.splice(i, 1)
+    }
+    this.shelves.left.splice(0, this.shelves.left.length, ...left)
+    this.layout = this.relayout()
+  }
+
+  /** y thresholds: above `top` opens the fused page, below `bottom` dismisses the card */
+  cardZones(): { top: number; bottom: number } {
+    const z = this.config.cardZone * this.layout.height
+    return { top: z, bottom: this.layout.height - z }
+  }
+
+  isCardHeld(): boolean {
+    return this.cardHold() !== undefined
+  }
+
+  private relayout(): Layout {
+    return computeLayout(this.width, this.height, { left: this.shelves.left.length, right: this.shelves.right.length }, this.rows)
   }
 
   update(now: number, input: InputFrame): void {
@@ -121,10 +164,9 @@ export class Scene {
       h.pos = lerp(h.pos, h.target, k)
     }
 
-    if (this.fuse) {
-      const card = this.cardHold()
-      this.fuse.at = card ? { ...card.pos } : lerp(this.fuse.at, this.layout.center, k)
-    }
+    const card = this.fuse ? this.cardHold() : undefined
+    if (this.fuse) this.fuse.at = card ? { ...card.pos } : lerp(this.fuse.at, this.layout.center, k)
+    if (card) this.checkCardZones(card)
 
     this.flights = this.flights.filter((f) => now - f.startedAt < this.config.returnMs)
     this.updateHover()
@@ -181,6 +223,20 @@ export class Scene {
     if (f && f.id === fuseId) f.status = 'error'
   }
 
+  private checkCardZones(card: Held): void {
+    const f = this.fuse
+    if (!f) return
+    const { top, bottom } = this.cardZones()
+    if (card.target.y > bottom) {
+      this.held.delete(card.handId)
+      this.fuse = null
+    } else if (card.target.y < top && f.status === 'done') {
+      // let go so it glides back; the hand must release and grip again to re-open
+      this.held.delete(card.handId)
+      this.onOpenFused(this.site(f.siteA), this.site(f.siteB))
+    }
+  }
+
   private cardHold(): Held | undefined {
     for (const h of this.held.values()) if (h.from.kind === 'card') return h
     return undefined
@@ -227,7 +283,7 @@ export class Scene {
     if (!h) return
     this.held.delete(e.handId)
     if (h.from.kind === 'card') {
-      this.dropCard(e.point)
+      this.dropCard()
       return
     }
 
@@ -237,12 +293,12 @@ export class Scene {
     const target = this.slotAt(e.point)
 
     if (h.from.kind === 'shelf') {
-      const otherSite = target === null ? null : this.slots[target === 0 ? 1 : 0]
-      if (target !== null && !this.isSlotHeld(target) && otherSite !== siteId) {
-        const replaced = this.slots[target]
-        if (replaced !== siteId) this.fly(replaced, L.slots[target], this.shelfPosOf(replaced), L.slotRadius, L.shelfRadius)
-        this.slots[target] = siteId
-        this.fly(siteId, h.pos, L.slots[target], r, L.slotRadius, target)
+      const slot = SLOT_OF[h.from.side]
+      if (target === slot && !this.isSlotHeld(slot)) {
+        const replaced = this.slots[slot]
+        if (replaced !== siteId) this.fly(replaced, L.slots[slot], this.shelfPosOf(replaced), L.slotRadius, L.shelfRadius)
+        this.slots[slot] = siteId
+        this.fly(siteId, h.pos, L.slots[slot], r, L.slotRadius, slot)
       } else {
         this.fly(siteId, h.pos, this.itemPos(h.from), r, L.shelfRadius)
       }
@@ -280,20 +336,13 @@ export class Scene {
     this.onFuse(this.site(a), this.site(b), this.fuse.id)
   }
 
-  private dropCard(p: Point): void {
+  private dropCard(): void {
     const f = this.fuse
-    if (!f) return
-    const edge = this.config.dismissEdge * this.layout.width
-    if (p.x < edge || p.x > this.layout.width - edge) {
-      this.fuse = null
-      return
-    }
-    if (f.status === 'error') {
-      f.status = 'fusing'
-      f.startedAt = this.now
-      f.id = this.nextFuseId++
-      this.onFuse(this.site(f.siteA), this.site(f.siteB), f.id)
-    }
+    if (f?.status !== 'error') return
+    f.status = 'fusing'
+    f.startedAt = this.now
+    f.id = this.nextFuseId++
+    this.onFuse(this.site(f.siteA), this.site(f.siteB), f.id)
   }
 
   private updateHover(): void {
