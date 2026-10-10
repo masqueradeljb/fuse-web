@@ -247,24 +247,52 @@ Logos already come from `/api/logo` (Phase 1.5). Phase 2 adds the fusion itself.
   retry), then cross-fades into the fused logo.
 - Pulling the card up opens the fused page with the fused logo shown large.
 
-## Phase 3 — fused landing page
+## Phase 3 — fused landing page (left = content, right = style)
 
-### `/api/fuse-site`
+Decided 2026-10-10. Same direction as the logo: the **left** site gives the content and
+structure (what the product is, headline, copy, sections, product imagery); the **right**
+site gives the visual style (palette, fonts, buttons, radii, spacing, image mood).
 
-Uses the two cached `/api/site` results — no extra capture.
+### Runs in the background from the moment a fuse starts
 
-1. **Mix (code, a few lines):** background + text color + heading font from A; accent
-   color + body font + radius from B. Which site is A is decided by a hash of the pair id,
-   so it's stable per pair.
-2. **Generate (LLM):** Claude (`claude-sonnet-5-5`) gets the mixed tokens as CSS custom
-   properties, both sites' copy, both hero image URLs, both screenshots (as images, for
-   vibe), and the fused logo path. It returns one self-contained HTML file: nav with
-   fused logo, hero, 3-feature section, CTA band, footer. Fused name and copy are invented
-   ("Spotbnb — stay where the music is").
-3. Saved to `cache/pages/<a>__<b>.html`, served at `/fused/<a>__<b>`.
+When the logo starts fusing, the app also starts the site job; by the time the user pulls
+the card up, the page is usually ready. Pulling up only *opens* it. Dismissing the card
+cancels both jobs. The page links the fused logo by its deterministic URL (same pair id as
+`/api/fuse-logo`), so the two jobs don't wait on each other.
 
-In the app, the result card gains an "Open fused site" target; pull it to the center (or
-click) to show the page in a full-screen iframe.
+### Capture — headless Chromium (Playwright), cached per site
+
+- One `inspectPage()` script (written fresh, ~150 lines, plain JS run in the page):
+  tokens from computed styles (background/text/accent colors, heading/body fonts, h1 size,
+  radius, shadow, primary button look), content (title, h1, subhead, CTA labels, nav
+  labels, up to 6 section headings with a line each), up to 6 large images + logo
+  (absolute URLs), and a 1280×800 JPEG screenshot.
+- `cache/sites/<host>.json` + `.jpg`; reused across pairs. Failure → generate from what we
+  have (name + URL at minimum).
+
+### Generate — OpenAI Responses API
+
+- Model `gpt-5.4` (`FUSE_PAGE_MODEL`), low reasoning effort for speed. Input: instructions,
+  the content capture (JSON) + screenshot, the style capture (JSON) + screenshot, the
+  fused-logo URL, both names.
+- Output: one self-contained HTML file — nav with the fused logo, hero, 3 features, CTA
+  band, footer; style tokens as CSS variables; copy about the left site's product with an
+  invented fused name; images only from the captured URLs. No scripts.
+- Saved to `cache/pages/<pair id>.html`; served with a CSP that blocks scripts
+  (`script-src 'none'`). Token usage logged. Cap `FUSE_MAX_PAGES` (default 30) per run.
+
+### Routes (`/api/fuse-site`)
+
+- `POST /` `{ a: {id, name, url}, b: {...} }` → `{ id, status }` (starts or joins the job).
+- `GET /status?id=` → `{ status: 'capturing' | 'generating' | 'ready' | 'error' | 'unknown', error? }`.
+- `GET /page?id=` → the HTML. `POST /cancel?id=` → aborts a running job.
+
+### In the app and fused page
+
+- The card's status line adds "building site…" / "site ready ✓".
+- `fused.html` shows the fused logo with a "building the fused site…" animation, polls
+  status, and switches to the page when ready. If the server doesn't know the job (e.g.
+  restarted), it starts it from the stored pair.
 
 ## Secrets and public-repo hygiene
 
