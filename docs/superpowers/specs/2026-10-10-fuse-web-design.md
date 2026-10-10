@@ -270,9 +270,11 @@ cancels both jobs. The page links the fused logo by its deterministic URL (same 
 - `cache/sites/<host>.json` + `.jpg`; reused across pairs. Failure → generate from what we
   have (name + URL at minimum).
 
-### Generate — OpenAI Responses API
+### Generate — Gemini (`gemini-3.8-flash`)
 
-- Model `gpt-5.4` (`FUSE_PAGE_MODEL`), low reasoning effort for speed. Input: instructions,
+- Gemini `generateContent` with `GEMINI_API_KEY` (header only), model `gemini-3.8-flash`
+  (`FUSE_PAGE_MODEL`), low thinking level for speed (`FUSE_PAGE_THINKING`). The logo stays
+  on OpenAI `gpt-image-2.5`. Input: instructions,
   the content capture (JSON) + screenshot, the style capture (JSON) + screenshot, the
   fused-logo URL, both names.
 - Output: one self-contained HTML file — nav with the fused logo, hero, 3 features, CTA
