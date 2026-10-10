@@ -147,7 +147,28 @@ export const INSPECT_PAGE_JS = String.raw`(() => {
     seen.add(src)
     media.push({ kind, src, w: Math.round(r.width), h: Math.round(r.height), alt: clean(alt, 120) })
   }
-  for (const img of all('img')) addMedia('image', httpUrl(img.currentSrc || img.src), img.getBoundingClientRect(), img.alt)
+  // an image with other visible content drawn over it is a layer (texture, frame, backdrop), not a picture:
+  // on its own it renders as an empty box. Product snapshots capture the finished composite instead.
+  const overlap = (a, b) => {
+    const w = Math.min(a.right, b.right) - Math.max(a.left, b.left)
+    const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+    return w > 0 && h > 0 ? (w * h) / Math.max(1, a.width * a.height) : 0
+  }
+  const isLayer = (el) => {
+    const r = el.getBoundingClientRect()
+    let box = el.parentElement
+    for (let i = 0; i < 3 && box && box !== document.body; i++, box = box.parentElement) {
+      for (const other of box.querySelectorAll('img, svg, canvas, video, picture, p, span, h1, h2, h3, h4, li, button, [style*="background"]')) {
+        if (other === el || other.contains(el) || el.contains(other) || !visible(other)) continue
+        const text = /^(P|SPAN|H\d|LI|BUTTON)$/.test(other.tagName) ? (other.innerText || '').trim() : 'x'
+        if (text && overlap(r, other.getBoundingClientRect()) > 0.15) return true
+      }
+    }
+    return false
+  }
+  for (const img of all('img')) {
+    if (!isLayer(img)) addMedia('image', httpUrl(img.currentSrc || img.src), img.getBoundingClientRect(), img.alt)
+  }
   for (const v of all('video')) {
     const r = v.getBoundingClientRect()
     const vs = [v.currentSrc, v.getAttribute('src'), ...Array.from(v.querySelectorAll('source')).map((s) => s.getAttribute('src'))].map(httpUrl).find(Boolean)
@@ -159,7 +180,10 @@ export const INSPECT_PAGE_JS = String.raw`(() => {
     const m = /url\(["']?([^"')]+)["']?\)/.exec(getComputedStyle(el).backgroundImage || '')
     if (!m) continue
     const r = el.getBoundingClientRect()
-    if (r.width >= 300 && r.height >= 200 && visible(el)) addMedia('image', httpUrl(m[1]), r, el.getAttribute('aria-label') || '')
+    // CSS backgrounds under content are backdrops; keep only ones with nothing drawn on top
+    if (r.width >= 300 && r.height >= 200 && visible(el) && !(el.innerText || '').trim() && !el.querySelector('img, svg, canvas, video') && !isLayer(el)) {
+      addMedia('image', httpUrl(m[1]), r, el.getAttribute('aria-label') || '')
+    }
   }
   media.sort((x, y) => y.w * y.h - x.w * x.h)
   const logoEl = first('header img, nav img, a[href="/"] img, [class*="logo" i] img')
