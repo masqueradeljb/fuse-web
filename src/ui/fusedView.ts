@@ -5,8 +5,8 @@ import { saveFusedPair } from './fusedPair'
  * Opens the fused page in a new tab. A hand gesture isn't a user activation, so Chrome may
  * block the pop-up — then the page shows in the in-app overlay instead.
  */
-export function openFused(a: Site, b: Site, overlay: HTMLElement, onBlocked: () => void, logoUrl?: string): void {
-  const url = `/fused.html?pair=${encodeURIComponent(saveFusedPair(a, b, localStorage, logoUrl))}`
+export function openFused(a: Site, b: Site, overlay: HTMLElement, onBlocked: () => void, logoUrl?: string, pageId?: string): void {
+  const url = `/fused.html?pair=${encodeURIComponent(saveFusedPair(a, b, localStorage, logoUrl, pageId))}`
   if (window.open(url, '_blank')) return
   const frame = overlay.querySelector('iframe')
   if (frame) frame.src = url

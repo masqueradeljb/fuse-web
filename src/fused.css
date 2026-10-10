@@ -31,3 +31,29 @@ p { opacity: 0.85; }
 }
 .marks.small { gap: 16px; }
 .marks.small img { width: 64px; height: 64px; padding: 12px; }
+
+.build-bar {
+  width: min(320px, 70vw);
+  height: 8px;
+  margin: 16px auto 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.25);
+}
+.build-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--a, #888), var(--b, #bbb));
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35) inset;
+  animation: build-pulse 1.6s ease-in-out infinite;
+}
+@keyframes build-pulse {
+  0%, 100% { width: 25%; opacity: 0.7; }
+  50% { width: 100%; opacity: 1; }
+}
+.build-stage { margin: 12px 0 0; font-size: 14px; }
+.build-error { max-width: 480px; margin: 16px auto 0; }
+@media (prefers-reduced-motion: reduce) {
+  .build-bar span { animation: none; width: 100%; opacity: 0.8; }
+}

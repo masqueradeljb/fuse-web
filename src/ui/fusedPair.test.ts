@@ -37,8 +37,8 @@ describe('fusedPair', () => {
   })
   it('stores the fused logo with the pair', () => {
     const s = memoryStorage()
-    const id = saveFusedPair(a, b, s, '/api/fuse-logo/img?id=mine.com__spotify')
-    expect(readFusedPair(id, s)).toEqual({ a, b, logoUrl: '/api/fuse-logo/img?id=mine.com__spotify' })
+    const id = saveFusedPair(a, b, s, '/api/fuse-logo/img?id=mine.com__spotify', 'mine.com__spotify')
+    expect(readFusedPair(id, s)).toEqual({ a, b, logoUrl: '/api/fuse-logo/img?id=mine.com__spotify', pageId: 'mine.com__spotify' })
   })
   it('returns null for unknown or corrupt entries', () => {
     const s = memoryStorage()

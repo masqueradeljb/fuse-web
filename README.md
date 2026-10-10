@@ -49,6 +49,18 @@ Privacy & Security → Camera, then reload.
   caps generations per server run (default 50).
 - Without a key you get the placeholder fuse (a banner says so).
 
+## Fused site
+
+When a fuse starts, the dev server also builds a fused landing page in the background: the left
+site's content in the right site's style. Pulling the card up opens `fused.html`, which shows a
+"building…" view and switches to the page when it is ready.
+
+- One-time Chromium install for the capturer: `npx playwright install chromium`.
+- Captures are cached in `cache/sites`, generated pages in `cache/pages`.
+- `GEMINI_API_KEY` (page) is separate from `OPENAI_API_KEY` (logo). Tunables: `FUSE_PAGE_MODEL`,
+  `FUSE_PAGE_THINKING`, `FUSE_MAX_PAGES`.
+- Pages are served with scripts blocked.
+
 ## Controls
 
 | Gesture | Does |

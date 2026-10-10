@@ -340,6 +340,12 @@ export class Renderer {
       if (motion && f.status === 'done' && f.doneAt !== undefined) this.drawBurst(fx, f.doneAt, now, p, R, dt)
     }
 
+    const pageNote =
+      f.pageStatus === 'capturing' || f.pageStatus === 'generating'
+        ? ' · building site…'
+        : f.pageStatus === 'ready'
+          ? ' · site ready ✓'
+          : ''
     const status =
       f.status === 'fusing'
         ? `fusing… ${Math.floor(age / 1000)}s`
@@ -353,7 +359,7 @@ export class Renderer {
     ctx.fillText(f.result?.label ?? `${a.name} × ${b.name}`, p.x, p.y + R + 36)
     ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
     ctx.font = '14px system-ui, sans-serif'
-    ctx.fillText(status, p.x, p.y + R + 60)
+    ctx.fillText(status + pageNote, p.x, p.y + R + 60)
     ctx.restore()
   }
 

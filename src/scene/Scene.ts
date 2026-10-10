@@ -1,5 +1,6 @@
 import { sceneConfig as defaultConfig, type SceneConfig } from '../config'
 import type { FuseResult } from '../fuse/FuseClient'
+import type { PageStatus } from '../fuse/siteJobs'
 import type { GripEvent, HandCursor, InputFrame, Point, Site } from '../types'
 import { computeLayout, type Layout, type Side } from './layout'
 
@@ -46,6 +47,8 @@ export interface FuseState {
   status: FuseStatus
   startedAt: number
   result: FuseResult | null
+  /** fused landing page job status (undefined = no job) */
+  pageStatus?: PageStatus
   /** scene time when the result arrived */
   doneAt?: number
   /** current card position */
@@ -234,6 +237,11 @@ export class Scene {
       f.result = result
       f.doneAt = this.now
     }
+  }
+
+  setPageStatus(fuseId: number, status: PageStatus): void {
+    const f = this.fuse
+    if (f && f.id === fuseId) f.pageStatus = status
   }
 
   setFuseError(fuseId: number): void {

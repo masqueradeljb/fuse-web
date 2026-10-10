@@ -3,6 +3,7 @@ import { gripConfig } from './config'
 import { REFERENCE_SITES, SHELF_ROWS } from './data/sites'
 import { DebugPanel } from './debug/DebugPanel'
 import { AiFuseClient, NoKeyError } from './fuse/AiFuseClient'
+import { cancelSite, siteStatus, startSite } from './fuse/siteJobs'
 import { PlaceholderFuseClient, type FuseResult } from './fuse/FuseClient'
 import { GestureEngine } from './gesture/GestureEngine'
 import { MouseHand } from './input/MouseHand'
@@ -32,6 +33,8 @@ const fuseClient = new AiFuseClient()
 const fallback = new PlaceholderFuseClient(0)
 /** in-flight fusions, aborted when their card is dismissed */
 const pending = new Map<number, AbortController>()
+/** fuseId -> fused page job id */
+const siteJobs = new Map<number, string>()
 let noKeyNoticeShown = false
 let scene: Scene | null = null
 const renderer = new Renderer(canvas, REFERENCE_SITES)
@@ -138,6 +141,32 @@ async function runFuse(a: Site, b: Site, fuseId: number) {
   }
 }
 
+const SITE_POLL_MS = 2000
+
+/** Starts the fused-page job alongside the logo fuse and mirrors its status onto the card. */
+async function runSite(a: Site, b: Site, fuseId: number) {
+  try {
+    const job = await startSite(a, b)
+    if (scene?.fuse?.id !== fuseId) {
+      // dismissed while starting
+      if (!siteJobs.has(fuseId)) cancelSite(job.id)
+      return
+    }
+    siteJobs.set(fuseId, job.id)
+    scene.setPageStatus(fuseId, job.status)
+    let status = job.status
+    while (status === 'capturing' || status === 'generating') {
+      await new Promise((r) => setTimeout(r, SITE_POLL_MS))
+      if (scene?.fuse?.id !== fuseId || siteJobs.get(fuseId) !== job.id) return
+      status = (await siteStatus(job.id)).status
+      if (scene?.fuse?.id !== fuseId) return
+      scene.setPageStatus(fuseId, status)
+    }
+  } catch (err) {
+    console.warn('fused site job unavailable', err)
+  }
+}
+
 function startStage(site: Site) {
   start.hidden = true
   addForm.hidden = false
@@ -151,10 +180,14 @@ function startStage(site: Site) {
     onFuse: (a, b, fuseId) => {
       hideFusedTitle(fusedTitle)
       void runFuse(a, b, fuseId)
+      void runSite(a, b, fuseId)
     },
     onFuseDismissed: (fuseId) => {
       pending.get(fuseId)?.abort()
       pending.delete(fuseId)
+      const pageId = siteJobs.get(fuseId)
+      if (pageId) cancelSite(pageId)
+      siteJobs.delete(fuseId)
       hideFusedTitle(fusedTitle)
     },
     onOpenFused: (a, b, result) => {
@@ -165,6 +198,7 @@ function startStage(site: Site) {
         overlay,
         () => showBanner('Pop-up blocked — showing it here. Allow pop-ups for this site to open fused pages in a new tab.', 6000),
         result?.logoUrl,
+        scene?.fuse ? siteJobs.get(scene.fuse.id) : undefined,
       )
     },
   })
