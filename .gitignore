@@ -1,0 +1,21 @@
+# secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+service-account*.json
+application_default_credentials.json
+
+# generated / fetched third-party content
+cache/
+
+# deps & build
+node_modules/
+dist/
+.vite/
+
+# local tooling
+.DS_Store
+.claude/settings.local.json
+*.log
