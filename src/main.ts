@@ -64,11 +64,21 @@ async function startCamera() {
 }
 
 let bannerTimer: ReturnType<typeof setTimeout> | undefined
+let bannerSaved: { text: string; hidden: boolean } | null = null
 function showBanner(text: string, hideAfterMs?: number) {
   clearTimeout(bannerTimer)
+  // a timed message restores whatever the banner showed before (e.g. the camera notice)
+  if (hideAfterMs) bannerSaved ??= { text: banner.textContent ?? '', hidden: banner.hidden === true }
+  else bannerSaved = null
   banner.textContent = text
   banner.hidden = false
-  if (hideAfterMs) bannerTimer = setTimeout(() => (banner.hidden = true), hideAfterMs)
+  if (hideAfterMs) {
+    bannerTimer = setTimeout(() => {
+      banner.textContent = bannerSaved?.text ?? ''
+      banner.hidden = bannerSaved?.hidden ?? true
+      bannerSaved = null
+    }, hideAfterMs)
+  }
 }
 
 function startStage(site: Site) {
@@ -127,7 +137,8 @@ function frame(now: number) {
       cursors: [...handFrame.cursors, ...fromMouse.cursors],
       events: [...handEvents, ...fromMouse.events],
     }
-    scene.update(now, input)
+    // the fused overlay covers the stage: hands and mouse must not reach it
+    scene.update(now, overlay.hidden ? input : { cursors: [], events: [] })
     debug.update(input.cursors)
     renderer.showDebug = debug.visible
     renderer.draw(scene, tracker ? video : null, hands)

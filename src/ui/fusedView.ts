@@ -21,6 +21,9 @@ export function bindOverlayClose(overlay: HTMLElement): void {
     if (frame) frame.src = 'about:blank'
   }
   overlay.querySelector('button')?.addEventListener('click', close)
+  window.addEventListener('message', (e) => {
+    if (e.origin === location.origin && e.data?.type === 'fuse-web:close-overlay') close()
+  })
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !overlay.hidden) close()
   })

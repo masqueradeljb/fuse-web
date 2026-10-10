@@ -30,6 +30,7 @@ html, body {
   border-radius: 10px;
   background: rgba(220, 60, 60, 0.9);
   font-size: 14px;
+  z-index: 30;
 }
 
 #hint {
@@ -68,7 +69,6 @@ html, body {
   background: #0b0b10;
   z-index: 10;
 }
-#start[hidden], #add-site[hidden], #fused-overlay[hidden] { display: none; }
 #start h1 { margin: 0; font-size: 44px; letter-spacing: -0.02em; }
 #start p { margin: 0 0 12px; max-width: 420px; color: rgba(255, 255, 255, 0.7); }
 #start-form { display: flex; gap: 8px; }

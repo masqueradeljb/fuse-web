@@ -2,12 +2,11 @@
 
 Grab two website logos with your hands and fuse them into something new.
 
-Your webcam tracks both hands in the browser (MediaPipe). Logos sit on shelves along the
-screen edges; two are active in the middle. Pinch or make a fist to grab. Hold one logo in
-each hand and bring them together to fuse.
-
-> Phase 1: gesture UI with a placeholder fuse result. AI logo fusion and fused landing
-> pages come next — see `docs/superpowers/specs/`.
+Enter your site on the start page and its logo is fetched for you. Your webcam tracks both
+hands in the browser (MediaPipe): your logo sits on the left, 12 reference sites on the
+right. Pinch or make a fist to grab, hold one logo in each hand and smash them together to
+fuse. Pull the result card up to open its fused page, or down to dismiss it. The fuse
+itself is still a placeholder; AI fusion is next — see `docs/superpowers/specs/`.
 
 ## Run
 

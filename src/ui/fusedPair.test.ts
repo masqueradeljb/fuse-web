@@ -7,7 +7,15 @@ const b: Site = { id: 'spotify', name: 'Spotify', url: 'https://www.spotify.com'
 
 function memoryStorage() {
   const m = new Map<string, string>()
-  return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) }
+  return {
+    getItem: (k: string) => m.get(k) ?? null,
+    setItem: (k: string, v: string) => void m.set(k, v),
+    removeItem: (k: string) => void m.delete(k),
+    key: (i: number) => [...m.keys()][i] ?? null,
+    get length() {
+      return m.size
+    },
+  }
 }
 
 describe('fusedPair', () => {
@@ -16,6 +24,16 @@ describe('fusedPair', () => {
     const id = saveFusedPair(a, b, s)
     expect(id).toBe('mine.com__spotify')
     expect(readFusedPair(id, s)).toEqual([a, b])
+  })
+  it('removes other stored pairs when saving a new one', () => {
+    const s = memoryStorage()
+    const idA = saveFusedPair(a, b, s)
+    s.setItem('other-key', 'keep')
+    const c: Site = { ...a, id: 'other.com' }
+    const idB = saveFusedPair(c, b, s)
+    expect(readFusedPair(idA, s)).toBeNull()
+    expect(readFusedPair(idB, s)).toEqual([c, b])
+    expect(s.getItem('other-key')).toBe('keep')
   })
   it('returns null for unknown or corrupt entries', () => {
     const s = memoryStorage()

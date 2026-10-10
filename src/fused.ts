@@ -2,6 +2,12 @@ import './fused.css'
 import { logoSrc } from './render/logoImages'
 import { readFusedPair } from './ui/fusedPair'
 
+addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && window.parent !== window) {
+    window.parent.postMessage({ type: 'fuse-web:close-overlay' }, location.origin)
+  }
+})
+
 const root = document.querySelector<HTMLElement>('#fused')!
 const pair = readFusedPair(new URLSearchParams(location.search).get('pair') ?? '')
 
