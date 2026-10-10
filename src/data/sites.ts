@@ -15,7 +15,7 @@ import {
 } from 'simple-icons'
 import type { Site } from '../types'
 
-export const PER_SHELF = 6
+export const SHELF_ROWS = 6
 
 const site = (icon: SimpleIcon, url: string): Site => ({
   id: icon.slug,
@@ -25,8 +25,8 @@ const site = (icon: SimpleIcon, url: string): Site => ({
   iconPath: icon.path,
 })
 
-/** First PER_SHELF go on the left shelf, the rest on the right. Slots start with the first of each. */
-export const SITES: Site[] = [
+/** Reference sites for the right shelf (2 columns of SHELF_ROWS). The right slot starts with the first. */
+export const REFERENCE_SITES: Site[] = [
   site(siSpotify, 'https://www.spotify.com'),
   site(siStripe, 'https://stripe.com'),
   site(siGithub, 'https://github.com'),

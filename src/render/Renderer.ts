@@ -1,7 +1,7 @@
 import { sameRef, type ItemRef, type Scene } from '../scene/Scene'
 import { coverRect } from '../tracking/coords'
 import type { Point, Site, TrackedHand } from '../types'
-import { glyphImage } from './logoImages'
+import { logoImage } from './logoImages'
 
 /** Draws a Scene onto a canvas. Reads the scene; never changes it. */
 export class Renderer {
@@ -16,7 +16,12 @@ export class Renderer {
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('2D canvas unavailable')
     this.ctx = ctx
-    for (const s of sites) this.glyphs.set(s.id, glyphImage(s))
+    for (const s of sites) this.glyphs.set(s.id, logoImage(s))
+  }
+
+  /** Registers a site added at runtime (your sites). */
+  addSite(site: Site): void {
+    this.glyphs.set(site.id, logoImage(site))
   }
 
   resize(width: number, height: number): void {
@@ -49,6 +54,7 @@ export class Renderer {
     this.drawSlots(scene)
     this.drawFlights(scene)
     this.drawHeld(scene)
+    this.drawCardZones(scene)
     this.drawFuse(scene)
     this.drawCursors(scene)
     if (this.showDebug) this.drawLandmarks(hands)
@@ -61,21 +67,27 @@ export class Renderer {
 
   private drawLogo(site: Site, p: Point, r: number, glow = false, alpha = 1): void {
     const { ctx } = this
+    const img = this.glyphs.get(site.id)
+    const ready = img !== undefined && img.complete && img.naturalWidth > 0
     ctx.save()
     ctx.globalAlpha = alpha
     if (glow) {
       ctx.shadowColor = 'rgba(255, 255, 255, 0.9)'
       ctx.shadowBlur = r * 0.8
     }
-    ctx.fillStyle = site.color
+    // your sites: full-color logo on white; reference sites: white/black glyph on brand color
+    ctx.fillStyle = site.logoUrl ? '#ffffff' : site.color
     ctx.beginPath()
     ctx.arc(p.x, p.y, r, 0, Math.PI * 2)
     ctx.fill()
     ctx.shadowBlur = 0
-    const img = this.glyphs.get(site.id)
-    if (img?.complete && img.naturalWidth > 0) {
-      const s = r * 1.1
-      ctx.drawImage(img, p.x - s / 2, p.y - s / 2, s, s)
+    if (ready) {
+      const box = site.logoUrl ? r * 1.3 : r * 1.1
+      const k = box / Math.max(img.naturalWidth, img.naturalHeight)
+      const w = img.naturalWidth * k
+      const h = img.naturalHeight * k
+      ctx.clip()
+      ctx.drawImage(img, p.x - w / 2, p.y - h / 2, w, h)
     }
     ctx.restore()
   }
@@ -124,6 +136,25 @@ export class Renderer {
     }
   }
 
+  private drawCardZones(scene: Scene): void {
+    if (!scene.fuse || !scene.isCardHeld()) return
+    const { ctx } = this
+    const { width: W, height: H } = scene.layout
+    const { top, bottom } = scene.cardZones()
+    const canOpen = scene.fuse.status === 'done'
+    ctx.save()
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.08)'
+    if (canOpen) ctx.fillRect(0, 0, W, top)
+    ctx.fillRect(0, bottom, W, H - bottom)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'
+    ctx.font = '600 18px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    if (canOpen) ctx.fillText('↑ open fused site', W / 2, top / 2)
+    ctx.fillText('↓ dismiss', W / 2, bottom + (H - bottom) / 2)
+    ctx.restore()
+  }
+
   private drawFuse(scene: Scene): void {
     const f = scene.fuse
     if (!f) return
@@ -170,7 +201,11 @@ export class Renderer {
     }
 
     const status =
-      f.status === 'fusing' ? 'fusing…' : f.status === 'error' ? 'failed — grip to retry' : 'pull to an edge to dismiss'
+      f.status === 'fusing'
+        ? 'fusing…'
+        : f.status === 'error'
+          ? 'failed — grip to retry · pull ↓ to dismiss'
+          : 'pull ↑ to open · pull ↓ to dismiss'
     ctx.save()
     ctx.textAlign = 'center'
     ctx.fillStyle = '#ffffff'

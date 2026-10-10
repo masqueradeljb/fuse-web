@@ -38,6 +38,8 @@ export interface Site {
   url: string
   /** brand color as #RRGGBB */
   color: string
-  /** SVG path data in a 24×24 viewBox */
-  iconPath: string
+  /** reference sites: SVG path data in a 24×24 viewBox (simple-icons) */
+  iconPath?: string
+  /** your sites: same-origin logo image URL from /api/logo */
+  logoUrl?: string
 }
