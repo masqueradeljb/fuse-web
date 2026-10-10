@@ -12,10 +12,15 @@ export class MouseHand {
     target.addEventListener('pointermove', (e) => this.move(e.clientX, e.clientY))
     target.addEventListener('pointerdown', (e) => {
       const c = this.move(e.clientX, e.clientY)
+      if (e.button !== 0) return
       c.gripping = true
       this.pending.push({ type: 'gripStart', handId: MOUSE_HAND_ID, point: { ...c.point } })
     })
     target.addEventListener('pointerup', (e) => this.release(e.clientX, e.clientY))
+    target.addEventListener('pointercancel', (e) => this.release(e.clientX, e.clientY))
+    window.addEventListener('blur', () => {
+      if (this.cursor) this.release(this.cursor.point.x, this.cursor.point.y)
+    })
     target.addEventListener('pointerleave', (e) => {
       this.release(e.clientX, e.clientY)
       this.cursor = null

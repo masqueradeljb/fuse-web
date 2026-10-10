@@ -73,7 +73,7 @@ export class Renderer {
     ctx.fill()
     ctx.shadowBlur = 0
     const img = this.glyphs.get(site.id)
-    if (img?.complete) {
+    if (img?.complete && img.naturalWidth > 0) {
       const s = r * 1.1
       ctx.drawImage(img, p.x - s / 2, p.y - s / 2, s, s)
     }
