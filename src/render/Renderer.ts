@@ -237,11 +237,23 @@ export class Renderer {
     return img
   }
 
-  /** Starts loading a fused logo; resolves once it can be drawn (or failed). */
-  prepareResult(url: string): Promise<void> {
-    return this.resultImage(url)
-      .decode()
-      .catch(() => undefined)
+  /**
+   * Loads a fused logo; resolves true once it can be drawn, false if it failed or took
+   * longer than `timeoutMs`. A failed image is forgotten so a retry loads it afresh.
+   */
+  async prepareResult(url: string, timeoutMs = 5000): Promise<boolean> {
+    const img = this.resultImage(url)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const ok = await Promise.race([
+      img.decode().then(
+        () => img.naturalWidth > 0,
+        () => false,
+      ),
+      new Promise<boolean>((resolve) => (timer = setTimeout(() => resolve(false), timeoutMs))),
+    ])
+    clearTimeout(timer)
+    if (!ok && this.results.get(url) === img) this.results.delete(url)
+    return ok
   }
 
   /** Particle state belongs to one fuse attempt; a new id starts fresh. */

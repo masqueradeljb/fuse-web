@@ -89,10 +89,19 @@ function showBanner(text: string, hideAfterMs?: number) {
   }
 }
 
+/** a fuse (render PNGs + POST + image load) that takes longer than this is abandoned */
+const FUSE_TIMEOUT_MS = 150_000
+
 /** Hands a result to the scene once its logo can be drawn, so the burst and the reveal line up. */
-async function deliver(a: Site, b: Site, fuseId: number, result: FuseResult) {
-  if (result.logoUrl) await renderer.prepareResult(result.logoUrl)
-  if (scene?.fuse?.id !== fuseId) return
+async function deliver(a: Site, b: Site, fuseId: number, result: FuseResult, signal: AbortSignal) {
+  if (result.logoUrl && !(await renderer.prepareResult(result.logoUrl))) {
+    if (signal.aborted || scene?.fuse?.id !== fuseId) return
+    console.warn('fused logo failed to load', result.logoUrl)
+    showBanner('Fused logo failed to load — grip the card to retry', 6000)
+    scene.setFuseError(fuseId)
+    return
+  }
+  if (signal.aborted || scene?.fuse?.id !== fuseId) return
   scene.setFuseResult(fuseId, result)
   showFusedTitle(fusedTitle, a, b)
 }
@@ -100,8 +109,16 @@ async function deliver(a: Site, b: Site, fuseId: number, result: FuseResult) {
 async function runFuse(a: Site, b: Site, fuseId: number) {
   const ctrl = new AbortController()
   pending.set(fuseId, ctrl)
+  // the card must never stay "fusing" forever because of the client
+  const timer = setTimeout(() => {
+    if (ctrl.signal.aborted) return // already dismissed
+    ctrl.abort()
+    console.warn('fuse timed out', fuseId)
+    showBanner('Fusion took too long — grip the card to retry', 6000)
+    scene?.setFuseError(fuseId)
+  }, FUSE_TIMEOUT_MS)
   try {
-    await deliver(a, b, fuseId, await fuseClient.fuse(a, b, ctrl.signal))
+    await deliver(a, b, fuseId, await fuseClient.fuse(a, b, ctrl.signal), ctrl.signal)
   } catch (err) {
     if (ctrl.signal.aborted || (err as Error)?.name === 'AbortError') return
     if (err instanceof NoKeyError) {
@@ -109,13 +126,14 @@ async function runFuse(a: Site, b: Site, fuseId: number) {
         noKeyNoticeShown = true
         showBanner('No OpenAI key on the dev server (see README) — showing a placeholder fuse.', 6000)
       }
-      await deliver(a, b, fuseId, await fallback.fuse(a, b))
+      await deliver(a, b, fuseId, await fallback.fuse(a, b), ctrl.signal)
       return
     }
     console.error('fuse failed', err)
     showBanner(err instanceof Error ? err.message : 'Fusion failed', 6000)
     scene?.setFuseError(fuseId)
   } finally {
+    clearTimeout(timer)
     pending.delete(fuseId)
   }
 }
@@ -130,20 +148,25 @@ function startStage(site: Site) {
     rows: SHELF_ROWS,
     width: innerWidth,
     height: innerHeight,
-    onFuse: (a, b, fuseId) => void runFuse(a, b, fuseId),
+    onFuse: (a, b, fuseId) => {
+      hideFusedTitle(fusedTitle)
+      void runFuse(a, b, fuseId)
+    },
     onFuseDismissed: (fuseId) => {
       pending.get(fuseId)?.abort()
       pending.delete(fuseId)
       hideFusedTitle(fusedTitle)
     },
-    onOpenFused: (a, b, result) =>
+    onOpenFused: (a, b, result) => {
+      hideFusedTitle(fusedTitle)
       openFused(
         a,
         b,
         overlay,
         () => showBanner('Pop-up blocked — showing it here. Allow pop-ups for this site to open fused pages in a new tab.', 6000),
         result?.logoUrl,
-      ),
+      )
+    },
   })
   void startCamera()
 }
@@ -182,6 +205,8 @@ function frame(now: number) {
     debug.update(input.cursors)
     renderer.showDebug = debug.visible
     renderer.draw(scene, tracker ? video : null, hands)
+    // the title must not cover the open/dismiss zones while the card is pulled
+    if (!fusedTitle.hidden && scene.isCardHeld()) hideFusedTitle(fusedTitle)
 
     if (hands.length) lastHandSeen = now
     hint.hidden = !tracker || now - lastHandSeen < 3000
