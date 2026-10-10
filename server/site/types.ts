@@ -31,12 +31,32 @@ export interface SiteHero {
   poster?: string
 }
 
+export interface SiteMedia {
+  kind: 'image' | 'video'
+  src: string
+  w: number
+  h: number
+  alt: string
+}
+
+export interface SiteSnapshot {
+  /** same-origin URL served by /api/fuse-site/asset */
+  url: string
+  w: number
+  h: number
+}
+
 export interface SiteCapture {
   url: string
   tokens: SiteTokens
   content: SiteContent
   /** absolute URLs, largest first */
   images: string[]
+  /** visuals >= 300x200, largest first */
+  media: SiteMedia[]
+  /** video URLs seen on the network */
+  videos: string[]
+  snapshots: SiteSnapshot[]
   logo?: string
   hero: SiteHero
   /** meta description */

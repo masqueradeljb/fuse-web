@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { createSiteJobs, SiteRef } from './jobs'
 
@@ -8,7 +9,7 @@ const PAGE_CSP = [
   "default-src 'none'",
   "img-src 'self' https: data:",
   "style-src 'unsafe-inline' https://fonts.googleapis.com",
-  "media-src https:",
+  "media-src 'self' https:",
   "font-src https://fonts.gstatic.com data:",
   "base-uri 'none'",
   "form-action 'none'",
@@ -21,7 +22,7 @@ const isRef = (v: unknown): v is SiteRef =>
   /^https?:\/\//.test((v as SiteRef).url)
 
 /** Mounted at /api/fuse-site. a = content (left slot), b = style (right slot). */
-export function createSiteHandler(jobs: Jobs) {
+export function createSiteHandler(jobs: Jobs, sitesDir: string) {
   return async function handleSite(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://localhost')
     const id = url.searchParams.get('id') ?? ''
@@ -64,6 +65,16 @@ export function createSiteHandler(jobs: Jobs) {
           return void res.end()
         }
         return sendJson(res, 404, { error: 'hero not available' })
+      }
+      if (req.method === 'GET' && url.pathname === '/asset') {
+        const key = url.searchParams.get('key') ?? ''
+        const n = url.searchParams.get('n') ?? ''
+        const file = join(sitesDir, `${key}-snap-${n}.jpg`)
+        if (!/^[a-z0-9._-]+$/i.test(key) || key.includes('..') || !/^[0-9]$/.test(n) || !existsSync(file)) return sendJson(res, 404, { error: 'unknown asset' })
+        res.statusCode = 200
+        res.setHeader('content-type', 'image/jpeg')
+        res.setHeader('cache-control', 'no-store')
+        return void res.end(readFileSync(file))
       }
       sendJson(res, 404, { error: 'not found' })
     } catch {

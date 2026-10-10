@@ -17,7 +17,8 @@ const json = (v: unknown) => JSON.stringify(v, null, 1)
 
 /** Left site = the product; right site = the reference (style, structure, hero format, marketing angle). */
 export function buildPagePrompt(p: PagePromptInput): string {
-  const video = p.style?.hero.media === 'video' && p.style.hero.src ? p.style.hero : null
+  const sniffed = p.style?.videos[0]
+  const video = p.style?.hero.media === 'video' && p.style.hero.src ? p.style.hero : sniffed ? { src: sniffed, poster: p.style?.hero.poster } : null
   const A = p.contentName
   const B = p.styleName
   return [
@@ -42,13 +43,14 @@ export function buildPagePrompt(p: PagePromptInput): string {
     video
       ? `- Also place <video autoplay muted loop playsinline${video.poster ? ` poster="${video.poster}"` : ''} src="${video.src}"></video> as a full-bleed background behind the hero with a dark tint overlay so text stays readable.`
       : `- Do not use any <video>.`,
-    `- Images: for feature sections use only URLs from ${A}'s "images" list below (absolute https URLs); never use ${B}'s images (the hero video above is the only exception). If none, use CSS shapes/gradients in the reference palette instead.`,
+    `- Media-forward layout, mirroring ${B}'s section rhythm: the hero visual; a large product showcase section built from ${A}'s "snapshots" (screenshots of the product's own sections, use as <img>) or a product video from ${A}'s "media" (<video autoplay muted loop playsinline src="…">); a visual on each feature card; and a gallery/strip if 4 or more visuals remain.`,
+    `- Use only visuals from ${A}'s "media" list and "snapshots" list below (absolute https URLs or same-origin /api paths exactly as given), each at most once; use "alt" text for captions/alt attributes when helpful. Never use ${B}'s images (the hero background video above is the only exception). If a section has no visual left, use CSS shapes/gradients in the reference palette instead.`,
     `- Copy: rewrite ${A}'s messaging in ${B}'s voice and angle; keep the facts about ${A}'s product. Short and punchy.`,
     `- Responsive (single column under 720px). Accessible contrast.`,
     ``,
     `PRODUCT site capture (${A}):`,
     p.content
-      ? json({ content: p.content.content, hero: p.content.hero, description: p.content.description, images: p.content.images })
+      ? json({ content: p.content.content, hero: p.content.hero, description: p.content.description, media: p.content.media, images: p.content.images, snapshots: p.content.snapshots })
       : `(capture unavailable — infer from the name and URL)`,
     ``,
     `REFERENCE site capture (${B}):`,

@@ -123,7 +123,7 @@ export const INSPECT_PAGE_JS = String.raw`(() => {
       const poster = httpUrl(video.getAttribute('poster'))
       if (src) { hero.media = 'video'; hero.src = src }
       if (poster) hero.poster = poster
-      if (!src && poster) { hero.media = 'image'; hero.src = poster }
+      if (!src) hero.media = 'video'
     }
     if (hero.media === 'none') {
       const imgs = Array.from(box.querySelectorAll('img')).filter(visible).sort((x, y) => y.getBoundingClientRect().width * y.getBoundingClientRect().height - x.getBoundingClientRect().width * x.getBoundingClientRect().height)
@@ -140,6 +140,55 @@ export const INSPECT_PAGE_JS = String.raw`(() => {
       }
     }
   }
+  const media = []
+  const seen = new Set()
+  const addMedia = (kind, src, r, alt) => {
+    if (!src || seen.has(src) || r.width < 300 || r.height < 200) return
+    seen.add(src)
+    media.push({ kind, src, w: Math.round(r.width), h: Math.round(r.height), alt: clean(alt, 120) })
+  }
+  for (const img of all('img')) addMedia('image', httpUrl(img.currentSrc || img.src), img.getBoundingClientRect(), img.alt)
+  for (const v of all('video')) {
+    const r = v.getBoundingClientRect()
+    const vs = [v.currentSrc, v.getAttribute('src'), ...Array.from(v.querySelectorAll('source')).map((s) => s.getAttribute('src'))].map(httpUrl).find(Boolean)
+    if (vs) addMedia('video', vs, r, v.getAttribute('aria-label') || '')
+    else addMedia('image', httpUrl(v.getAttribute('poster')), r, '')
+  }
+  for (const el of Array.from(document.querySelectorAll('body *')).slice(0, 3000)) {
+    if (el.tagName === 'IMG' || el.tagName === 'VIDEO') continue
+    const m = /url\(["']?([^"')]+)["']?\)/.exec(getComputedStyle(el).backgroundImage || '')
+    if (!m) continue
+    const r = el.getBoundingClientRect()
+    if (r.width >= 300 && r.height >= 200 && visible(el)) addMedia('image', httpUrl(m[1]), r, el.getAttribute('aria-label') || '')
+  }
+  media.sort((x, y) => y.w * y.h - x.w * x.h)
   const logoEl = first('header img, nav img, a[href="/"] img, [class*="logo" i] img')
-  return { tokens, content, images: Array.from(new Set(images)).slice(0, 10), logo: logoEl ? abs(logoEl.currentSrc || logoEl.src) : undefined, hero, description, ogImage }
+  return { tokens, content, images: Array.from(new Set(images)).slice(0, 10), logo: logoEl ? abs(logoEl.currentSrc || logoEl.src) : undefined, hero, description, ogImage, media: media.slice(0, 12), videos: [], snapshots: [] }
+})()`
+
+
+/** Marks up to 4 big, non-overlapping, visually heavy blocks with data-fuse-snap and returns their sizes. */
+export const MARK_SNAPSHOTS_JS = String.raw`(() => {
+  const chosen = []
+  const out = []
+  const cands = Array.from(document.querySelectorAll('section, div, figure, main > *, article'))
+    .filter((el) => !el.closest('header, nav, footer'))
+    .map((el) => ({ el, r: el.getBoundingClientRect() }))
+    .filter(({ el, r }) => {
+      const cs = getComputedStyle(el)
+      if (r.width < 480 || r.height < 280 || r.height > 1600 || cs.display === 'none' || cs.visibility === 'hidden') return false
+      const hasBg = /url\(/.test(cs.backgroundImage || '')
+      return hasBg || !!el.querySelector('img, video, canvas, svg')
+    })
+    .sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height)
+  for (const { el, r } of cands) {
+    if (chosen.length >= 4) break
+    if (r.width * r.height > innerWidth * innerHeight * 6) continue
+    const overlaps = chosen.some((c) => c.el.contains(el) || el.contains(c.el) || !(r.right <= c.r.left || r.left >= c.r.right || r.bottom <= c.r.top || r.top >= c.r.bottom))
+    if (overlaps) continue
+    chosen.push({ el, r })
+  }
+  chosen.sort((a, b) => a.r.top - b.r.top)
+  chosen.forEach(({ el, r }, n) => { el.setAttribute('data-fuse-snap', String(n)); out.push({ n, w: Math.round(r.width), h: Math.round(r.height) }) })
+  return out
 })()`

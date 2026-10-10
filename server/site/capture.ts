@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Browser } from 'playwright'
-import { INSPECT_PAGE_JS } from './inspectPage'
+import { INSPECT_PAGE_JS, MARK_SNAPSHOTS_JS } from './inspectPage'
 import { guardedFetch, readCapped } from '../logo/handler'
 import { parseTags, siteName } from '../logo/parse'
 import type { SiteCapture } from './types'
@@ -23,7 +23,7 @@ export interface CaptureResult {
 }
 
 /** host + path slug, so different pages of one host don't collide */
-const hostKey = (url: string) => {
+export const hostKey = (url: string) => {
   const u = new URL(url)
   const path = u.pathname.replace(/^\/+|\/+$/g, '').replace(/[^a-z0-9.-]+/gi, '_')
   return `${u.hostname}${path ? `_${path}` : ''}`.replace(/[^a-z0-9._-]/gi, '_').slice(0, 120)
@@ -58,7 +58,7 @@ async function blockedCapture(url: string): Promise<SiteCapture> {
   return {
     url, blocked: true, tokens: NEUTRAL_TOKENS,
     content: { title, headline: title, subhead: '', ctas: [], nav: [], sections: [] },
-    images: [], description: meta('description').slice(0, 400), ogImage,
+    images: [], media: [], videos: [], snapshots: [], description: meta('description').slice(0, 400), ogImage,
     hero: { eyebrow: '', headline: title, subhead: '', cta: '', media: 'none' },
   }
 }
@@ -74,10 +74,23 @@ export function createCapturer(cacheDir: string) {
   }
 
   async function run(url: string, html?: string): Promise<CaptureResult> {
+    const key = hostKey(url)
     const context = await (await getBrowser()).newContext({
       viewport: VIEWPORT, userAgent: UA, locale: 'en-US', extraHTTPHeaders: { 'accept-language': 'en-US,en;q=0.9' },
     })
     const page = await context.newPage()
+    const videos: string[] = []
+    page.on('response', (r) => {
+      try {
+        const u = new URL(r.url())
+        if (!/^https?:$/.test(u.protocol)) return
+        const isVideo = (r.headers()['content-type'] ?? '').toLowerCase().startsWith('video/') || /\.(mp4|webm)$/i.test(u.pathname)
+        const clean = u.origin + u.pathname
+        if (isVideo && videos.length < 4 && !videos.some((v) => v.split('?')[0] === clean)) videos.push(r.url())
+      } catch {
+        /* ignore */
+      }
+    })
     try {
       if (html !== undefined) await page.setContent(html, { waitUntil: 'domcontentloaded' })
       else {
@@ -91,7 +104,31 @@ export function createCapturer(cacheDir: string) {
         ;[title, body] = await probe()
       }
       if (looksBlocked(title, body)) return { capture: await blockedCapture(url), screenshot: null }
+      // trigger lazy-loaded media
+      for (let i = 0; i < 4; i++) {
+        await page.evaluate(() => window.scrollBy(0, window.innerHeight)).catch(() => {})
+        await page.waitForTimeout(400)
+      }
+      await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {})
+      await page.waitForTimeout(500)
       const data = (await page.evaluate(INSPECT_PAGE_JS)) as Omit<SiteCapture, 'url'>
+      data.videos = videos
+      if (data.hero.media === 'video' && !data.hero.src && videos[0]) data.hero.src = videos[0]
+      if (data.hero.media === 'video' && !data.hero.src) data.hero.media = data.hero.poster ? 'image' : 'none'
+      if (data.hero.media === 'image' && !data.hero.src && data.hero.poster) data.hero.src = data.hero.poster
+      data.snapshots = []
+      try {
+        const marks = (await page.evaluate(MARK_SNAPSHOTS_JS)) as { n: number; w: number; h: number }[]
+        for (const m of marks) {
+          const buf = await page.locator(`[data-fuse-snap="${m.n}"]`).first().screenshot({ type: 'jpeg', quality: 75, timeout: 4000 }).catch(() => null)
+          if (!buf) continue
+          mkdirSync(cacheDir, { recursive: true })
+          writeFileSync(join(cacheDir, `${key}-snap-${m.n}.jpg`), buf)
+          data.snapshots.push({ url: `/api/fuse-site/asset?key=${encodeURIComponent(key)}&n=${m.n}`, w: m.w, h: m.h })
+        }
+      } catch {
+        /* snapshots are optional */
+      }
       const screenshot = await page.screenshot({ type: 'jpeg', quality: 70 }).catch(() => null)
       return { capture: { url, ...data }, screenshot }
     } finally {

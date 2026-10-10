@@ -9,8 +9,9 @@ const dir = (p: string) => fileURLToPath(new URL(p, import.meta.url))
 
 /** Serves /api/fuse-site: background site capture + page fusion. */
 export function siteApi(options: FuseOptions): Plugin {
-  const capturer = createCapturer(dir('../cache/sites'))
-  const handler = createSiteHandler(createSiteJobs(options, capturer, dir('../cache/pages')))
+  const sitesDir = dir('../cache/sites')
+  const capturer = createCapturer(sitesDir)
+  const handler = createSiteHandler(createSiteJobs(options, capturer, dir('../cache/pages')), sitesDir)
   return {
     name: 'fuse-web-site-api',
     configureServer(server) {
