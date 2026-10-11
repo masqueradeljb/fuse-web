@@ -23,3 +23,7 @@ dist/
 # fetched/copied on install
 public/mediapipe-wasm/
 public/models/
+
+# internal working notes (kept locally, not published)
+archive/
+docs/

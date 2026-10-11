@@ -2,9 +2,10 @@ import { logoImage } from '../render/logoImages'
 import type { Site } from '../types'
 
 /**
- * Landing-page backdrop: drifting brand-color light, twinkling dust, and logo orbs that bounce,
- * collide, and every few seconds get pulled together and fuse (squash → flash → split orb → split).
- * Echoes the stage's collision fuse. Static single frame under prefers-reduced-motion.
+ * Paper backdrop for the start and waiting pages: slow silk ribbons in brand colors, drifting dust,
+ * and logo orbs that bounce, collide, and every few seconds get pulled together and fuse
+ * (squash → glow → split orb → split). Echoes the stage's collision fuse. Static single frame under
+ * prefers-reduced-motion.
  */
 
 const AMBIENT = 60
@@ -15,7 +16,7 @@ const MERGED_MS = 2100
 const GROW_MS = 380
 const SEEK_TIMEOUT_MS = 6000
 const COOLDOWN_MS = 4000
-const BLOB_SCALE = 1 / 6 // blobs are soft: render them small and upscale
+const BLOB_SCALE = 1 / 6 // ribbons are soft: render them small and upscale
 const SPRITE_R = 64 // orb sprite radius in device px before dpr (covers the largest orb)
 const HALO = 1.55 // halo radius as a multiple of the orb radius
 
@@ -76,7 +77,8 @@ interface Ring {
   delay: number
 }
 
-interface Blob {
+/** A long soft band of brand color that drifts and turns slowly. */
+interface Ribbon {
   rgb: Rgb
   fx: number
   fy: number
@@ -85,7 +87,18 @@ interface Blob {
   ax: number
   ay: number
   size: number
+  ang: number
+  spin: number
 }
+
+export interface BackdropOptions {
+  /** sites whose colors tint the ribbons (default: all sites) */
+  paletteFrom?: Site[]
+  /** the copy's quiet zone as fractions of the viewport: free orbs drift around it */
+  quiet?: { cx: number; cy: number; rx: number; ry: number }
+}
+
+const PAPER: Rgb = [251, 247, 241]
 
 function rgbOf(hex: string): Rgb {
   if (!/^#[0-9a-f]{6}$/i.test(hex)) return [255, 255, 255]
@@ -95,12 +108,12 @@ function rgbOf(hex: string): Rgb {
 const css = ([r, g, b]: Rgb, a = 1) => `rgba(${r},${g},${b},${a})`
 const lum = ([r, g, b]: Rgb) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
 
-/** Brightened for glow when the brand is too dark to light anything (black brands glow cool white). */
+/** Aura color on paper: dark saturated brands are lifted so they read as color; near-black stays a warm ink. */
 function glowOf(rgb: Rgb): Rgb {
   const l = lum(rgb)
   if (l >= 0.25) return rgb
-  if (Math.max(...rgb) - Math.min(...rgb) < 30) return [200, 210, 255]
-  const k = 0.55 - l
+  if (Math.max(...rgb) - Math.min(...rgb) < 30) return [92, 80, 70]
+  const k = 0.45 - l
   return rgb.map((c) => Math.round(c + (255 - c) * k)) as Rgb
 }
 
@@ -127,7 +140,8 @@ function palette(sites: Site[], n: number): Rgb[] {
 const rand = (a: number, b: number) => a + Math.random() * (b - a)
 const easeOutBack = (t: number) => 1 + 2.4 * (t - 1) ** 3 + 1.4 * (t - 1) ** 2
 
-export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[]): { stop(): void } {
+export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[], opts: BackdropOptions = {}): { stop(): void } {
+  const quiet = opts.quiet ?? { cx: 0.5, cy: 0.47, rx: 0.36, ry: 0.27 }
   const ctx = canvas.getContext('2d')!
   const blobCanvas = document.createElement('canvas')
   const bctx = blobCanvas.getContext('2d')!
@@ -142,17 +156,19 @@ export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[]): { stop(
   let nextFusionAt = 0
   let stopped = false
 
-  const blobs: Blob[] = palette(sites, 5).map((rgb, i) => ({
+  const ribbons: Ribbon[] = palette(opts.paletteFrom ?? sites, 5).map((rgb, i) => ({
     rgb,
-    fx: rand(0.03, 0.07) * (i % 2 ? 1 : -1),
-    fy: rand(0.03, 0.06),
+    fx: rand(0.025, 0.05) * (i % 2 ? 1 : -1),
+    fy: rand(0.02, 0.045),
     px: rand(0, Math.PI * 2),
     py: rand(0, Math.PI * 2),
-    ax: rand(0.25, 0.42),
-    ay: rand(0.22, 0.38),
-    size: rand(0.42, 0.6),
+    ax: rand(0.3, 0.45),
+    ay: rand(0.28, 0.42),
+    size: rand(0.55, 0.8),
+    ang: -0.55 + rand(-0.35, 0.35), // mostly one diagonal, like a fold of silk
+    spin: rand(0.015, 0.035) * (i % 2 ? -1 : 1),
   }))
-  const dustColors = blobs.map((b) => b.rgb).concat([[255, 255, 255]])
+  const dustColors = ribbons.map((b) => b.rgb).concat([[26, 20, 16]])
 
   const orbs: Orb[] = []
   const fusions: Fusion[] = []
@@ -164,7 +180,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[]): { stop(
     if (!sites.length) return
     // one orb per site, never a repeat; a fused orb is just its two orbs, hidden until they split
     const unique = [...new Map(sites.map((s) => [s.id, s])).values()]
-    const count = Math.min(unique.length, Math.max(7, Math.min(14, Math.round((w * h) / 90000))))
+    const count = Math.min(unique.length, Math.max(w < 600 ? 5 : 7, Math.min(14, Math.round((w * h) / 90000))))
     const scale = Math.min(1, Math.max(0.65, Math.min(w, h) / 800))
     for (let i = 0; i < count; i++) {
       const site = unique[i]
@@ -175,7 +191,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[]): { stop(
       for (let tries = 0; tries < 40; tries++) {
         x = rand(r, w - r)
         y = rand(r, h - r)
-        if (orbs.every((o) => Math.hypot(o.x - x, o.y - y) > o.r + r + 12)) break
+        if (!inQuiet(x, y, r) && orbs.every((o) => Math.hypot(o.x - x, o.y - y) > o.r + r + 12)) break
       }
       const ang = rand(0, Math.PI * 2)
       const cruise = rand(18, 42)
@@ -195,7 +211,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[]): { stop(
     for (let i = 0; i < AMBIENT; i++) {
       particles.push({
         kind: 'dust', x: rand(0, w), y: rand(0, h), vx: rand(-8, 8), vy: rand(-14, -3),
-        size: rand(0.8, 2.4), rgb: dustColors[i % dustColors.length],
+        size: rand(0.7, 1.9), rgb: dustColors[i % dustColors.length],
         born: 0, life: Infinity, rot: 0, vr: rand(1.2, 3.2), phase: rand(0, Math.PI * 2),
       })
     }
@@ -210,15 +226,21 @@ export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[]): { stop(
     c.width = c.height = size
     const g = c.getContext('2d')!
     const m = size / 2
-    const halo = g.createRadialGradient(m, m, R * 0.8, m, m, R * HALO)
-    halo.addColorStop(0, css(o.glow, 0.55))
+    const halo = g.createRadialGradient(m, m, R * 0.85, m, m, R * HALO)
+    halo.addColorStop(0, css(o.glow, 0.42))
     halo.addColorStop(1, css(o.glow, 0))
     g.fillStyle = halo
     g.fillRect(0, 0, size, size)
+    // the disc sits on the paper: a soft warm contact shadow under it
+    g.save()
+    g.shadowColor = 'rgba(80, 45, 20, 0.28)'
+    g.shadowBlur = R * 0.35
+    g.shadowOffsetY = R * 0.12
     g.fillStyle = o.site.logoUrl ? (o.site.logoBg ?? '#ffffff') : o.site.color
     g.beginPath()
     g.arc(m, m, R, 0, Math.PI * 2)
     g.fill()
+    g.restore()
     const img = o.img
     if (img.complete && img.naturalWidth > 0) {
       const box = R * 1.1
@@ -234,8 +256,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[]): { stop(
     g.beginPath()
     g.arc(m, m, R, 0, Math.PI * 2)
     g.fill()
-    g.lineWidth = Math.max(1, R * 0.05)
-    g.strokeStyle = css(o.glow, 0.7)
+    g.lineWidth = Math.max(1, R * 0.04)
+    g.strokeStyle = 'rgba(255,255,255,0.55)'
     g.stroke()
     return c
   }
@@ -292,7 +314,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[]): { stop(
       emit({
         kind: 'bit', x: x + Math.cos(ang) * R * 0.4, y: y + Math.sin(ang) * R * 0.4,
         vx: Math.cos(ang) * v, vy: Math.sin(ang) * v - R * 1.2,
-        size: rand(4, 9), rgb: i % 3 === 2 ? [255, 255, 255] : i % 2 ? a : b,
+        size: rand(4, 9), rgb: i % 3 === 2 ? [26, 20, 16] : i % 2 ? a : b,
         life: rand(1000, 1500), rot: rand(0, Math.PI), vr: rand(-12, 12),
       }, now)
     }
@@ -364,15 +386,46 @@ export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[]): { stop(
     if (b.y > h - b.r) { b.y = h - b.r; b.vy = -Math.abs(b.vy) }
   }
 
-  /** A soft field around the title and panel: free orbs drift around it, so the copy stays readable. */
-  function keepOut(o: Orb, dt: number) {
-    const ex = Math.min(w * 0.36, 460) + o.r
-    const ey = Math.min(h * 0.2, 190) + o.r
-    const dx = (o.x - w / 2) / ex
-    const dy = (o.y - h * 0.47) / ey
+  function inQuiet(x: number, y: number, r: number): boolean {
+    const dx = (x - w * quiet.cx) / (Math.min(w * quiet.rx, 520) + r)
+    const dy = (y - h * quiet.cy) / (Math.min(h * quiet.ry, 280) + r)
+    return Math.hypot(dx, dy) < 1
+  }
+
+  /** The copy's ellipse is solid: a body that enters is put back on its edge and glances off. */
+  function fence(b: Body) {
+    const ex = Math.min(w * quiet.rx, 520) + b.r
+    const ey = Math.min(h * quiet.ry, 280) + b.r
+    const dx = (b.x - w * quiet.cx) / ex
+    const dy = (b.y - h * quiet.cy) / ey
     const d = Math.hypot(dx, dy)
     if (d >= 1) return
-    const f = 140 * (1 - d) * dt
+    const ux = d ? dx / d : 0
+    const uy = d ? dy / d : -1
+    b.x = w * quiet.cx + ux * ex
+    b.y = h * quiet.cy + uy * ey
+    // outward normal of the ellipse at that point
+    let nx = ux / ex
+    let ny = uy / ey
+    const nl = Math.hypot(nx, ny) || 1
+    nx /= nl
+    ny /= nl
+    const vn = b.vx * nx + b.vy * ny
+    if (vn < 0) {
+      b.vx -= 1.6 * vn * nx
+      b.vy -= 1.6 * vn * ny
+    }
+  }
+
+  /** A soft field around the title and panel: free orbs drift around it, so the copy stays readable. */
+  function keepOut(o: Body, dt: number) {
+    const ex = Math.min(w * quiet.rx, 520) + o.r
+    const ey = Math.min(h * quiet.ry, 280) + o.r
+    const dx = (o.x - w * quiet.cx) / ex
+    const dy = (o.y - h * quiet.cy) / ey
+    const d = Math.hypot(dx, dy)
+    if (d >= 1) return
+    const f = 220 * (1 - d) * dt
     const n = d || 1
     o.vx += (dx / n) * f
     o.vy += (dy / n) * f
@@ -481,7 +534,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[]): { stop(
       b.vy = f.vy + ny * out
       for (const o of [a, b]) walls(o)
       sparks(f.x, f.y, nx, ny, a.glow, b.glow, 10, 200, now)
-      rings.push({ x: f.x, y: f.y, r: f.r * 0.8, rgb: [255, 255, 255], born: now, delay: 0 })
+      rings.push({ x: f.x, y: f.y, r: f.r * 0.8, rgb: b.glow, born: now, delay: 0 })
       endFusion(f, now)
     }
   }
@@ -503,19 +556,23 @@ export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[]): { stop(
         o.vx *= k
         o.vy *= k
       } else {
+        keepOut(o, dt) // a fusing pair also meets outside the copy
         const sp = Math.hypot(o.vx, o.vy)
         if (sp > 280) { o.vx *= 280 / sp; o.vy *= 280 / sp }
       }
       o.x += o.vx * dt
       o.y += o.vy * dt
+      fence(o)
       walls(o)
     }
     for (const f of fusions) {
       if (f.phase !== 'merged') continue
+      keepOut(f, dt)
       f.vx *= Math.exp(-dt * 0.6)
       f.vy *= Math.exp(-dt * 0.6)
       f.x += f.vx * dt
       f.y += f.vy * dt
+      fence(f)
       walls(f)
     }
     collide(now)
@@ -543,52 +600,63 @@ export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[]): { stop(
 
   // ---------- drawing ----------
 
-  function drawBlobs(t: number) {
+  function drawRibbons(t: number) {
     const bw = blobCanvas.width
     const bh = blobCanvas.height
+    bctx.setTransform(1, 0, 0, 1, 0, 0)
     bctx.globalCompositeOperation = 'source-over'
-    bctx.fillStyle = '#0d0b1a'
+    bctx.fillStyle = css(PAPER)
     bctx.fillRect(0, 0, bw, bh)
-    bctx.globalCompositeOperation = 'lighter'
-    const big = Math.max(bw, bh)
-    for (const b of blobs) {
+    const big = Math.hypot(bw, bh)
+    for (const b of ribbons) {
       const x = bw * (0.5 + b.ax * Math.sin(t * b.fx * Math.PI * 2 + b.px))
       const y = bh * (0.5 + b.ay * Math.cos(t * b.fy * Math.PI * 2 + b.py))
       const r = big * b.size
-      const g = bctx.createRadialGradient(x, y, 0, x, y, r)
-      g.addColorStop(0, css(b.rgb, 0.5))
-      g.addColorStop(0.45, css(b.rgb, 0.18))
+      bctx.setTransform(1, 0, 0, 1, x, y)
+      bctx.rotate(b.ang + Math.sin(t * b.spin * Math.PI * 2) * 0.5)
+      bctx.scale(1, 0.22) // a long band, not a blob
+      const g = bctx.createRadialGradient(0, 0, 0, 0, 0, r)
+      g.addColorStop(0, css(b.rgb, 0.55))
+      g.addColorStop(0.4, css(b.rgb, 0.22))
       g.addColorStop(1, css(b.rgb, 0))
       bctx.fillStyle = g
-      bctx.fillRect(0, 0, bw, bh)
+      bctx.fillRect(-r, -r, r * 2, r * 2)
     }
+    bctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.imageSmoothingEnabled = true
     ctx.drawImage(blobCanvas, 0, 0, canvas.width, canvas.height)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    // a gentle vignette keeps the edges deep and the colour in the middle
-    const v = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.hypot(w, h) * 0.62)
-    v.addColorStop(0, 'rgba(6,5,14,0)')
-    v.addColorStop(1, 'rgba(6,5,14,0.55)')
+    // a paper wash over the copy keeps the type crisp; the color lives around it
+    const cx = w * quiet.cx
+    const cy = h * quiet.cy
+    const rx = Math.min(w * quiet.rx, 520) * 1.25
+    const ry = Math.min(h * quiet.ry, 280) * 1.25
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.scale(1, ry / rx)
+    const v = ctx.createRadialGradient(0, 0, 0, 0, 0, rx)
+    v.addColorStop(0, css(PAPER, 0.82))
+    v.addColorStop(0.6, css(PAPER, 0.5))
+    v.addColorStop(1, css(PAPER, 0))
     ctx.fillStyle = v
-    ctx.fillRect(0, 0, w, h)
+    ctx.fillRect(-rx, -rx, rx * 2, rx * 2)
+    ctx.restore()
   }
 
   function drawDust(now: number) {
-    ctx.globalCompositeOperation = 'lighter'
     for (const p of particles) {
       if (p.kind !== 'dust') continue
       const tw = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(now * 0.001 * p.vr + p.phase))
-      ctx.fillStyle = css(p.rgb, 0.12 * tw)
+      ctx.fillStyle = css(p.rgb, 0.1 * tw)
       ctx.beginPath()
-      ctx.arc(p.x, p.y, p.size * 3.2, 0, Math.PI * 2)
+      ctx.arc(p.x, p.y, p.size * 3, 0, Math.PI * 2)
       ctx.fill()
-      ctx.fillStyle = css(p.rgb, 0.85 * tw)
+      ctx.fillStyle = css(p.rgb, 0.55 * tw)
       ctx.beginPath()
       ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
       ctx.fill()
     }
-    ctx.globalCompositeOperation = 'source-over'
   }
 
   function drawOrb(o: Orb, sx = 1, sy = 1, ang = 0) {
@@ -654,17 +722,25 @@ export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[]): { stop(
     const ny = Math.sin(axis)
 
     // twin halo, one per brand, offset to its own half
-    ctx.globalCompositeOperation = 'lighter'
     for (const [o, side] of [[a, -1], [b, 1]] as const) {
       const hx = f.x + nx * side * R * 0.3
       const hy = f.y + ny * side * R * 0.3
       const g = ctx.createRadialGradient(hx, hy, R * 0.6, hx, hy, R * 1.9)
-      g.addColorStop(0, css(o.glow, 0.5))
+      g.addColorStop(0, css(o.glow, 0.38))
       g.addColorStop(1, css(o.glow, 0))
       ctx.fillStyle = g
       ctx.fillRect(hx - R * 2, hy - R * 2, R * 4, R * 4)
     }
-    ctx.globalCompositeOperation = 'source-over'
+    // contact shadow, as for the single orbs
+    ctx.save()
+    ctx.shadowColor = 'rgba(80, 45, 20, 0.28)'
+    ctx.shadowBlur = R * 0.35
+    ctx.shadowOffsetY = R * 0.12
+    ctx.fillStyle = a.site.color
+    ctx.beginPath()
+    ctx.arc(f.x, f.y, R, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
 
     // A | B split disc
     ctx.save()
@@ -711,13 +787,18 @@ export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[]): { stop(
     ctx.stroke()
     ctx.restore()
 
-    // flash at the moment of fusion
+    // a bloom of both colors at the moment of fusion, white at the heart
     const since = now - f.t0
-    if (motion && since < 260) {
-      ctx.globalAlpha = 0.9 * (1 - since / 260)
-      ctx.fillStyle = '#ffffff'
+    if (motion && since < 320) {
+      const k = since / 320
+      const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, R * (1.2 + 0.8 * k))
+      g.addColorStop(0, 'rgba(255,255,255,0.95)')
+      g.addColorStop(0.45, css(a.glow, 0.6))
+      g.addColorStop(1, css(b.glow, 0))
+      ctx.globalAlpha = 1 - k
+      ctx.fillStyle = g
       ctx.beginPath()
-      ctx.arc(f.x, f.y, R * 1.15, 0, Math.PI * 2)
+      ctx.arc(f.x, f.y, R * (1.2 + 0.8 * k), 0, Math.PI * 2)
       ctx.fill()
       ctx.globalAlpha = 1
     }
@@ -740,7 +821,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[]): { stop(
       if (p.kind === 'dust') continue
       const life = (now - p.born) / p.life
       if (p.kind === 'spark') {
-        ctx.globalCompositeOperation = 'lighter'
         ctx.globalAlpha = 1 - life
         ctx.strokeStyle = css(p.rgb)
         ctx.lineWidth = p.size
@@ -749,7 +829,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[]): { stop(
         ctx.moveTo(p.x, p.y)
         ctx.lineTo(p.x - p.vx * 0.04, p.y - p.vy * 0.04)
         ctx.stroke()
-        ctx.globalCompositeOperation = 'source-over'
       } else {
         ctx.globalAlpha = life < 0.66 ? 1 : (1 - life) / 0.34
         const cos = Math.cos(p.rot)
@@ -764,7 +843,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, sites: Site[]): { stop(
   }
 
   function draw(now: number, motion: boolean) {
-    drawBlobs(now / 1000)
+    drawRibbons(now / 1000)
     drawDust(now)
     for (const o of orbs) if (!o.hidden && !(o.fusing && o.fusing.phase === 'squash')) drawOrb(o)
     for (const f of fusions) {

@@ -15,6 +15,8 @@ const REVEAL_MS = 400
 const SEAM_SPARKS = 80
 /** collision: screen shake starts at this charge */
 const SHAKE_FROM = 0.8
+const UI_FONT = "'DM Sans Variable', system-ui, sans-serif"
+const MONO_FONT = "'JetBrains Mono Variable', ui-monospace, monospace"
 
 interface Spark {
   ang: number
@@ -77,6 +79,20 @@ function vivid(hex: string): string {
   const k = 0.55 - lum
   const mixed = ch.map((c) => Math.round(c + (255 - c) * k))
   return `#${mixed.map((c) => c.toString(16).padStart(2, '0')).join('')}`
+}
+
+/** Light color for a brand's aura: its vivid color, or a cool white for near-neutral brands (black, gray). */
+function auraColor(hex: string): string {
+  const v = vivid(hex)
+  const n = parseInt(v.slice(1), 16)
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+  return Math.max(...ch) - Math.min(...ch) < 40 ? '#dfe6ff' : v
+}
+
+/** '#rrggbb' + alpha → rgba() */
+function withAlpha(hex: string, a: number): string {
+  const n = parseInt(hex.slice(1), 16)
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${Math.max(0, Math.min(1, a))})`
 }
 
 /** Draws a Scene onto a canvas. Reads the scene; never changes it. */
@@ -193,29 +209,182 @@ export class Renderer {
     const L = scene.layout
     for (const side of ['left', 'right'] as const) {
       scene.shelves[side].forEach((id, index) => {
-        const glow = !scene.fuse && this.hovered(scene, { kind: 'shelf', side, index })
-        this.drawLogo(scene.site(id), L.shelf[side][index], L.shelfRadius, glow, scene.fuse ? 0.35 : 1)
+        const site = scene.site(id)
+        const p = L.shelf[side][index]
+        if (!scene.fuse && this.hovered(scene, { kind: 'shelf', side, index })) {
+          this.drawAura(p, L.shelfRadius, auraColor(site.color), scene.now, 0.75)
+        }
+        this.drawLogo(site, p, L.shelfRadius, false, scene.fuse ? 0.35 : 1)
       })
     }
   }
 
+  /**
+   * Brand-colored light behind a logo: a soft bloom and a beam of light sweeping around the rim.
+   * `power` 0..1 scales size and brightness (hover < placed < held).
+   */
+  private drawAura(p: Point, r: number, color: string, now: number, power: number, color2 = color): void {
+    const { ctx } = this
+    const motion = !this.reducedMotion
+    const t = motion ? now / 1000 : 0
+    const breathe = motion ? 0.5 + 0.5 * Math.sin(t * 2.1) : 0.5
+    const reach = r * (1.3 + 0.55 * power + 0.06 * breathe)
+    ctx.save()
+    ctx.globalCompositeOperation = 'screen'
+    // bloom: brand color fading out from just inside the rim (two colors: one lobe per side)
+    const lobes: [string, number][] = color2 === color ? [[color, 0]] : [[color, -1], [color2, 1]]
+    for (const [c, side] of lobes) {
+      const cx = p.x + side * r * 0.35
+      const bloom = ctx.createRadialGradient(cx, p.y, r * 0.7, cx, p.y, reach)
+      bloom.addColorStop(0, withAlpha(c, (0.55 + 0.15 * breathe) * power))
+      bloom.addColorStop(0.4, withAlpha(c, 0.2 * power))
+      bloom.addColorStop(1, withAlpha(c, 0))
+      ctx.fillStyle = bloom
+      ctx.beginPath()
+      ctx.arc(cx, p.y, reach, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // rim: a faint full ring, then a beam (white head, brand-color tail) chasing around it
+    const ringR = r + Math.max(3, r * 0.06)
+    ctx.lineWidth = Math.max(2, r * 0.04)
+    ctx.strokeStyle = withAlpha(color, 0.45 * power)
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, ringR, 0, Math.PI * 2)
+    ctx.stroke()
+    if (ctx.createConicGradient) {
+      const head = t * 1.8
+      const beam = ctx.createConicGradient(head, p.x, p.y)
+      beam.addColorStop(0, withAlpha(color, 0))
+      beam.addColorStop(0.28, withAlpha(color, 0.9 * power))
+      beam.addColorStop(0.36, `rgba(255, 255, 255, ${power})`)
+      beam.addColorStop(0.361, withAlpha(color, 0))
+      beam.addColorStop(0.5, withAlpha(color2, 0))
+      beam.addColorStop(0.78, withAlpha(color2, 0.9 * power))
+      beam.addColorStop(0.86, `rgba(255, 255, 255, ${power})`)
+      beam.addColorStop(0.861, withAlpha(color2, 0))
+      beam.addColorStop(1, withAlpha(color2, 0))
+      ctx.strokeStyle = beam
+      ctx.shadowColor = color
+      ctx.shadowBlur = r * 0.25 * power
+      ctx.lineWidth = Math.max(2.5, r * 0.05)
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, ringR, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+    ctx.restore()
+  }
+
+  /** A placed logo: a beam of light from above, a pool where it lands, and the logo's aura. */
+  private drawSpotlight(p: Point, r: number, color: string, now: number, hot: boolean): void {
+    const { ctx } = this
+    const motion = !this.reducedMotion
+    const flicker = motion ? 0.92 + 0.08 * Math.sin(now / 1000 * 1.7) : 1
+    ctx.save()
+    ctx.globalCompositeOperation = 'screen'
+    // beam: narrow at the top edge, opening to just wider than the logo
+    const top = { x: p.x, y: -r * 0.2 }
+    const beam = ctx.createLinearGradient(0, top.y, 0, p.y + r)
+    beam.addColorStop(0, `rgba(255, 255, 255, ${0.02 * flicker})`)
+    beam.addColorStop(0.7, `rgba(255, 255, 255, ${0.09 * flicker})`)
+    beam.addColorStop(1, 'rgba(255, 255, 255, 0)')
+    ctx.fillStyle = beam
+    ctx.beginPath()
+    ctx.moveTo(top.x - r * 0.3, top.y)
+    ctx.lineTo(top.x + r * 0.3, top.y)
+    ctx.lineTo(p.x + r * 1.6, p.y + r)
+    ctx.lineTo(p.x - r * 1.6, p.y + r)
+    ctx.closePath()
+    ctx.fill()
+    // floor pool: an ellipse of brand light under the logo
+    ctx.translate(p.x, p.y + r * 1.15)
+    ctx.scale(1, 0.24)
+    const pool = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 1.9)
+    pool.addColorStop(0, withAlpha(color, 0.55 * flicker))
+    pool.addColorStop(0.5, withAlpha(color, 0.18 * flicker))
+    pool.addColorStop(1, withAlpha(color, 0))
+    ctx.fillStyle = pool
+    ctx.beginPath()
+    ctx.arc(0, 0, r * 1.9, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+    this.drawAura(p, r, color, now, hot ? 0.9 : 0.6)
+  }
+
+  /** An empty slot: a dim pool and a slow comet of light circling it, brightening as a logo nears. */
+  private drawEmptySlot(p: Point, r: number, now: number, near: number, color: string): void {
+    const { ctx } = this
+    const motion = !this.reducedMotion
+    const t = motion ? now / 1000 : 0
+    const breathe = motion ? 0.5 + 0.5 * Math.sin(t * 1.6) : 0.5
+    const ring = r + 10
+    ctx.save()
+    ctx.globalCompositeOperation = 'screen'
+    const tint = near > 0 ? color : '#ffffff'
+    const pool = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, ring * 1.4)
+    pool.addColorStop(0, withAlpha(tint, 0.05 + 0.05 * breathe + 0.25 * near))
+    pool.addColorStop(0.7, withAlpha(tint, 0.03 + 0.08 * near))
+    pool.addColorStop(1, withAlpha(tint, 0))
+    ctx.fillStyle = pool
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, ring * 1.4, 0, Math.PI * 2)
+    ctx.fill()
+    // faint full track
+    ctx.strokeStyle = withAlpha(tint, 0.14 + 0.3 * near)
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, ring, 0, Math.PI * 2)
+    ctx.stroke()
+    // comet: a conic-faded arc chasing its own head
+    if (ctx.createConicGradient) {
+      const head = t * 1.4
+      const comet = ctx.createConicGradient(head - Math.PI * 0.9, p.x, p.y)
+      comet.addColorStop(0, withAlpha(tint, 0))
+      comet.addColorStop(0.45, withAlpha(tint, 0.95))
+      comet.addColorStop(0.451, withAlpha(tint, 0))
+      comet.addColorStop(1, withAlpha(tint, 0))
+      ctx.strokeStyle = comet
+      ctx.lineWidth = 3 + 2 * near
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, ring, head - Math.PI * 0.9, head - Math.PI * 0.9 + Math.PI * 0.9)
+      ctx.stroke()
+    }
+    ctx.restore()
+    ctx.save()
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.font = `500 13px ${MONO_FONT}`
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.45 + 0.4 * near})`
+    ctx.fillText(near > 0 ? 'drop it here' : 'place a logo', p.x, p.y)
+    ctx.restore()
+  }
+
   private drawSlots(scene: Scene): void {
     if (scene.fuse) return
-    const { ctx } = this
     const L = scene.layout
+    // a logo carried from a shelf lights up the slot it's heading for
+    const carried = [...scene.held.values()].filter((h) => h.siteId && h.from.kind === 'shelf')
     for (const slot of [0, 1] as const) {
       const p = L.slots[slot]
-      ctx.save()
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)'
-      ctx.setLineDash([8, 10])
-      ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.arc(p.x, p.y, L.slotRadius + 10, 0, Math.PI * 2)
-      ctx.stroke()
-      ctx.restore()
-      if (!scene.isSlotHidden(slot)) {
-        this.drawLogo(scene.site(scene.slots[slot]), p, L.slotRadius, this.hovered(scene, { kind: 'slot', slot }))
+      let near = 0
+      let nearColor = '#ffffff'
+      for (const h of carried) {
+        const d = Math.hypot(h.pos.x - p.x, h.pos.y - p.y)
+        const k = Math.max(0, Math.min(1, 1 - (d - L.slotRadius) / (L.slotRadius * 2.5)))
+        if (k > near) {
+          near = k
+          nearColor = auraColor(scene.site(h.siteId as string).color)
+        }
       }
+      if (scene.isSlotHidden(slot)) {
+        this.drawEmptySlot(p, L.slotRadius, scene.now, near, nearColor)
+        continue
+      }
+      const site = scene.site(scene.slots[slot])
+      const hot = this.hovered(scene, { kind: 'slot', slot }) || near > 0
+      this.drawSpotlight(p, L.slotRadius, auraColor(site.color), scene.now, hot)
+      this.drawLogo(site, p, L.slotRadius)
     }
   }
 
@@ -231,8 +400,12 @@ export class Renderer {
     const col = scene.collision
     for (const h of scene.held.values()) {
       if (!h.siteId) continue
+      const site = scene.site(h.siteId)
+      const r = scene.heldRadius(h)
+      // held logos carry their own light; pressed ones burn hotter with the charge
+      this.drawAura(h.pos, r, auraColor(site.color), scene.now, col && h.from.kind === 'slot' ? 1 : 0.85)
       if (col && h.from.kind === 'slot' && !this.reducedMotion) this.drawPressed(scene, h, col)
-      else this.drawLogo(scene.site(h.siteId), h.pos, scene.heldRadius(h), true)
+      else this.drawLogo(site, h.pos, r)
     }
   }
 
@@ -256,7 +429,7 @@ export class Renderer {
     ctx.scale(1 - 0.18 * push, 1 + 0.08 * push)
     ctx.rotate(-ang)
     ctx.translate(-ax, -ay)
-    this.drawLogo(scene.site(h.siteId as string), p, r, true)
+    this.drawLogo(scene.site(h.siteId as string), p, r)
     ctx.restore()
   }
 
@@ -368,7 +541,7 @@ export class Renderer {
       ctx.save()
       ctx.textAlign = 'center'
       ctx.textBaseline = 'top'
-      ctx.font = '700 18px system-ui, sans-serif'
+      ctx.font = `700 18px ${UI_FONT}`
       ctx.fillStyle = `rgba(255, 255, 255, ${0.9 * (1 - charge / 0.3) + 0.1})`
       ctx.shadowColor = 'rgba(0, 0, 0, 0.6)'
       ctx.shadowBlur = 6
@@ -388,7 +561,7 @@ export class Renderer {
     if (canOpen) ctx.fillRect(0, 0, W, top)
     ctx.fillRect(0, bottom, W, H - bottom)
     ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'
-    ctx.font = '600 18px system-ui, sans-serif'
+    ctx.font = `600 18px ${UI_FONT}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     if (canOpen) ctx.fillText('↑ open fused site', W / 2, top / 2)
@@ -476,12 +649,12 @@ export class Renderer {
       ctx.restore()
     }
 
+    // the card carries both brands' light, like the merged orbs on the start page
+    const held = scene.isCardHeld() || this.hovered(scene, { kind: 'card' })
+    this.drawAura(p, R, auraColor(a.color), now, held ? 1 : f.status === 'fusing' ? 0.8 : 0.6, auraColor(b.color))
+
     // card base: A | B halves
     ctx.save()
-    if (this.hovered(scene, { kind: 'card' })) {
-      ctx.shadowColor = 'rgba(255, 255, 255, 0.9)'
-      ctx.shadowBlur = R * 0.5
-    }
     ctx.beginPath()
     ctx.arc(p.x, p.y, R, 0, Math.PI * 2)
     ctx.fillStyle = a.color
@@ -500,12 +673,11 @@ export class Renderer {
     if (f.status === 'fusing') {
       if (motion) this.drawVortex(fx, a, b, p, R, t, dt)
       else {
-        this.energyRing(p, R * 1.08, ca, cb, 0, 0, 0.8)
+        this.energyRing(p, R * 1.12, ca, cb, 0, 0.6)
         this.drawLogo(a, { x: p.x - R * 0.25, y: p.y }, R * 0.4)
         this.drawLogo(b, { x: p.x + R * 0.25, y: p.y }, R * 0.4)
       }
     } else {
-      this.energyRing(p, R * 1.08, ca, cb, motion ? t * 0.4 : 0, motion ? t * 12 : 0, 0.55)
       this.drawResult(scene, f, fx, a, b, p, R)
       if (motion && f.status === 'done' && f.doneAt !== undefined) this.drawBurst(fx, f.doneAt, now, p, R, dt)
     }
@@ -525,16 +697,16 @@ export class Renderer {
     ctx.save()
     ctx.textAlign = 'center'
     ctx.fillStyle = '#ffffff'
-    ctx.font = '600 22px system-ui, sans-serif'
+    ctx.font = `600 22px ${UI_FONT}`
     ctx.fillText(f.result?.label ?? `${a.name} × ${b.name}`, p.x, p.y + R + 36)
     ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
-    ctx.font = '14px system-ui, sans-serif'
+    ctx.font = `13px ${MONO_FONT}`
     ctx.fillText(status + pageNote, p.x, p.y + R + 60)
     ctx.restore()
   }
 
-  /** A slowly turning dashed ring, A → B gradient across it. */
-  private energyRing(p: Point, r: number, ca: string, cb: string, turn: number, dash: number, alpha: number): void {
+  /** A thin turning ring, A → B gradient across it. */
+  private energyRing(p: Point, r: number, ca: string, cb: string, turn: number, alpha: number): void {
     const { ctx } = this
     const dx = Math.cos(turn) * r
     const dy = Math.sin(turn) * r
@@ -544,9 +716,7 @@ export class Renderer {
     ctx.save()
     ctx.globalAlpha = alpha
     ctx.strokeStyle = g
-    ctx.lineWidth = 3
-    ctx.setLineDash([r * 0.16, r * 0.09])
-    ctx.lineDashOffset = -dash
+    ctx.lineWidth = 2
     ctx.beginPath()
     ctx.arc(p.x, p.y, r, 0, Math.PI * 2)
     ctx.stroke()
@@ -599,8 +769,8 @@ export class Renderer {
     }
     ctx.restore()
 
-    this.energyRing(p, R * 1.08, ca, cb, t * 0.9, t * 40, 0.85)
-    this.energyRing(p, R * 1.2, cb, ca, -t * 0.6, -t * 25, 0.35)
+    this.energyRing(p, R * 1.14, ca, cb, t * 0.9, 0.5)
+    this.energyRing(p, R * 1.24, cb, ca, -t * 0.6, 0.22)
 
     // two logos on a spiral; comet tails are past positions on the same curve
     const orbit = (time: number, phase: number, out: Point): Point => {

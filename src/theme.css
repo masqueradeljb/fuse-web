@@ -1,0 +1,57 @@
+/* Shared look for the start page and the fused-site waiting page: warm paper, ink, serif display. */
+@import '@fontsource/dm-serif-display/latin-400.css';
+@import '@fontsource/dm-serif-display/latin-400-italic.css';
+@import '@fontsource-variable/dm-sans';
+@import '@fontsource-variable/jetbrains-mono';
+
+:root {
+  --paper: #fbf7f1;
+  --ink: #1a1410;
+  --ink-soft: #3b322b;
+  --muted: #6b5f55;
+  --line: rgba(26, 20, 16, 0.12);
+  --accent: #f2622a;
+  --font-display: 'DM Serif Display', Georgia, 'Times New Roman', serif;
+  --font-ui: 'DM Sans Variable', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace;
+  /* the brand spectrum the fused word and accents sweep through */
+  --spectrum: #ff5a5f, #ff8a4c, #ffb800, #58cc02, #1ed760, #22d3ee, #5865f2, #a259ff, #ff4fa3, #ff5a5f;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* the display headline: serif with one italic word in the moving spectrum */
+.display {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+.display em {
+  font-style: italic;
+  padding: 0 0.08em 0.06em 0.02em; /* italic overhang stays inside the clip */
+  background: linear-gradient(90deg, var(--spectrum));
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: spectrum 16s linear infinite;
+}
+@keyframes spectrum {
+  from { background-position: 0% 50%; }
+  to { background-position: 300% 50%; }
+}
+
+.mono-note {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .display em { animation: none; background-position: 30% 50%; }
+}

@@ -14,15 +14,17 @@
     <pre id="debug" hidden></pre>
     <section id="start">
       <canvas id="start-backdrop" aria-hidden="true"></canvas>
-      <h1>THE Fused Web</h1>
-      <div class="start-panel">
-        <p>Paste your URL, then fuse it.</p>
-        <form id="start-form" autocomplete="off">
-          <input name="site" placeholder="yoursite.com" aria-label="Your site URL" spellcheck="false" autofocus />
-          <button type="submit">Fuse</button>
-        </form>
-        <p id="start-status" class="status" aria-live="polite"></p>
+      <div class="start-copy">
+        <h1 class="display">The <em>Fused</em> Web</h1>
+        <p class="start-sub">Hold your site in one hand and a brand you love in the other. Push them together for a fused logo and landing page.</p>
       </div>
+      <form id="start-form" autocomplete="off">
+        <span class="prompt" aria-hidden="true">&gt;_</span>
+        <input name="site" placeholder="yoursite.com" aria-label="Your site URL" inputmode="url" spellcheck="false" autofocus />
+        <button type="submit">Fuse it <span aria-hidden="true">→</span></button>
+      </form>
+      <p id="start-status" class="status" aria-live="polite"></p>
+      <p class="mono-note">webcam · two hands · about a minute</p>
     </section>
     <form id="add-site" autocomplete="off" hidden>
       <input name="site" placeholder="+ add your site" spellcheck="false" />
